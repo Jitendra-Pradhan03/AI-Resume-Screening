@@ -60,7 +60,7 @@ app.get("/api/health", (req, res) => {
 
 // ── API Routes ───────────────────────────────────────────────────────────────
 // Routes will be added here as we build each module
-// app.use("/api/auth", require("./routes/authRoutes"));
+app.use("/api/auth", require("./routes/authRoutes"));
 // app.use("/api/resume", require("./routes/resumeRoutes"));
 // app.use("/api/job", require("./routes/jobRoutes"));
 // app.use("/api/match", require("./routes/matchRoutes"));
