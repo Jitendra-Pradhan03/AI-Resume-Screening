@@ -6,7 +6,7 @@
 // the uploadResume function via a service call.
 // Key concept: req.file is populated by Multer middleware before this
 // controller runs — we just read its properties.
-
+const { analyzeResume } = require("../services/aiService"); 
 const path = require("path");
 const fs = require("fs");
 const Candidate = require("../models/Candidate");
@@ -33,9 +33,33 @@ const uploadResume = async (req, res, next) => {
       filePath: filePath,
       fileSize: size,
       mimeType: mimetype,
-      status: "uploaded",
+      status: "processing",
     });
+    setImmediate(async () => {
+    try {
+    // await Candidate.findByIdAndUpdate(candidate._id, { status: "processing" });
 
+    const aiResult = await analyzeResume(filePath);
+
+    if (aiResult.success) {
+      await Candidate.findByIdAndUpdate(candidate._id, {
+        status: "analyzed",
+        parsedData: aiResult.data,
+      });
+    } else {
+      await Candidate.findByIdAndUpdate(candidate._id, {
+        status: "error",
+        errorMessage: aiResult.error,
+      });
+    }
+  } catch (err) {
+    console.error("Background AI analysis failed:", err.message);
+    await Candidate.findByIdAndUpdate(candidate._id, {
+      status: "error",
+      errorMessage: err.message,
+    });
+  }
+  });
     return sendSuccess(res, 201, "Resume uploaded successfully", {
       candidate: {
         id: candidate._id,
