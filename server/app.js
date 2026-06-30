@@ -65,7 +65,7 @@ app.use("/api/resume", require("./routes/resumeRoutes"));
 app.use("/api/job", require("./routes/jobRoutes"));
 app.use("/api/match", require("./routes/matchRoutes"));
 app.use("/api/questions", require("./routes/questionRoutes"));
-// app.use("/api/dashboard", require("./routes/dashboardRoutes"));
+app.use("/api/dashboard", require("./routes/dashboardRoutes"));
 
 // ── Error handling (must be last) ────────────────────────────────────────────
 app.use(notFound);

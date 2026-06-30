@@ -6,6 +6,13 @@
 // the uploadResume function via a service call.
 // Key concept: req.file is populated by Multer middleware before this
 // controller runs — we just read its properties.
+
+// server/controllers/resumeController.js
+// Replace the existing getResumeById function with this enhanced version.
+// Why this update: Step 4's version only returned the candidate document.
+// Now that matching (Step 7) and interview questions (Step 8) exist, the
+// detail view should also include a readiness summary so the frontend
+// doesn't need to make extra calls or compute anything client-side.
 const { analyzeResume } = require("../services/aiService"); 
 const path = require("path");
 const fs = require("fs");
@@ -123,28 +130,88 @@ const getAllResumes = async (req, res, next) => {
 
 // ── Get single candidate by ID ────────────────────────────────────────────────
 // GET /api/resume/:id
+
+
 const getResumeById = async (req, res, next) => {
   try {
     const candidate = await Candidate.findOne({
       _id: req.params.id,
-      recruiter: req.user._id, // ensure recruiter can only access their own
-    }).populate("jobDescription", "title company description");
+      recruiter: req.user._id,
+    }).populate("jobDescription", "title company description extractedSkills");
 
     if (!candidate) {
       return sendError(res, 404, "Candidate not found");
     }
 
-    // Build the file URL for the frontend PDF viewer
     const fileUrl = `${req.protocol}://${req.get("host")}/uploads/${candidate.storedFileName}`;
 
+    // Build a readiness summary — tells the frontend what's available
+    // and what's still missing, useful for showing the right UI state
+    const readiness = {
+      isParsed: Boolean(candidate.parsedData?.rawText),
+      isMatched: Boolean(candidate.matchScore?.weightedFinalScore !== undefined && candidate.jobDescription),
+      hasQuestions: Boolean(candidate.interviewQuestions?.length),
+      currentStatus: candidate.status,
+    };
+
     return sendSuccess(res, 200, "Candidate retrieved successfully", {
-      candidate,
+      candidate: {
+        id: candidate._id,
+        originalFileName: candidate.originalFileName,
+        fileSize: candidate.fileSize,
+        status: candidate.status,
+        errorMessage: candidate.errorMessage,
+        uploadedAt: candidate.createdAt,
+        updatedAt: candidate.updatedAt,
+        rank: candidate.rank,
+        recruiterNotes: candidate.recruiterNotes,
+
+        // Job this candidate was matched against
+        jobDescription: candidate.jobDescription,
+
+        // Parsed resume info (everything except the heavy rawText)
+        resumeInfo: candidate.parsedData
+          ? {
+              name: candidate.parsedData.name,
+              email: candidate.parsedData.email,
+              phone: candidate.parsedData.phone,
+              linkedin: candidate.parsedData.linkedin,
+              github: candidate.parsedData.github,
+              summary: candidate.parsedData.summary,
+              totalExperienceYears: candidate.parsedData.totalExperienceYears,
+              skills: candidate.parsedData.skills,
+              education: candidate.parsedData.education,
+              experience: candidate.parsedData.experience,
+              projects: candidate.parsedData.projects,
+              certifications: candidate.parsedData.certifications,
+            }
+          : null,
+
+        // AI match results
+        matchScore: candidate.matchScore,
+
+        // Interview questions, grouped by category for easy frontend rendering
+        interviewQuestions: candidate.interviewQuestions,
+        questionsByCategory: candidate.interviewQuestions?.length
+          ? groupQuestionsByCategory(candidate.interviewQuestions)
+          : null,
+      },
       fileUrl,
+      readiness,
     });
   } catch (error) {
     next(error);
   }
 };
+
+// Helper — groups interview questions by category for UI tabs (Technical / Behavioral / etc.)
+function groupQuestionsByCategory(questions) {
+  return questions.reduce((groups, q) => {
+    if (!groups[q.category]) groups[q.category] = [];
+    groups[q.category].push(q);
+    return groups;
+  }, {});
+}
 
 // ── Delete a resume ───────────────────────────────────────────────────────────
 // DELETE /api/resume/:id

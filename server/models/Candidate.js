@@ -158,7 +158,7 @@ const candidateSchema = new mongoose.Schema(
 candidateSchema.index({ recruiter: 1, createdAt: -1 }); // dashboard list
 candidateSchema.index({ jobDescription: 1, "matchScore.weightedFinalScore": -1 }); // rankings
 candidateSchema.index({ status: 1 }); // filter by status
-
+candidateSchema.index({ recruiter: 1, status: 1, "matchScore.weightedFinalScore": -1 });
 const Candidate = mongoose.model("Candidate", candidateSchema);
 
 module.exports = Candidate;
