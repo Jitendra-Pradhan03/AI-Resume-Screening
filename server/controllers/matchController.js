@@ -67,7 +67,14 @@ const matchSingleResume = async (req, res, next) => {
     if (aiResult.data.parsedResume) {
       updateData.parsedData = aiResult.data.parsedResume;
     }
+    if (aiResult.data.interviewQuestions) {
+      updateData.interviewQuestions = aiResult.data.interviewQuestions;
+    }
 
+    // Save question breakdown if returned
+    if (aiResult.data.questionBreakdown) {
+      updateData.questionsByCategory = aiResult.data.questionBreakdown;
+    }
     const updated = await Candidate.findByIdAndUpdate(
       candidateId,
       updateData,
@@ -156,7 +163,13 @@ const matchBatch = async (req, res, next) => {
         if (aiResult.data.parsedResume) {
           updateData.parsedData = aiResult.data.parsedResume;
         }
+        if (aiResult.data.interviewQuestions) {
+          updateData.interviewQuestions = aiResult.data.interviewQuestions;
+        }
 
+        if (aiResult.data.questionBreakdown) {
+          updateData.questionsByCategory = aiResult.data.questionBreakdown;
+        }
         const updated = await Candidate.findByIdAndUpdate(
           candidateId,
           updateData,

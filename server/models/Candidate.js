@@ -135,6 +135,16 @@ const candidateSchema = new mongoose.Schema(
     // ── Generated interview questions ──────────────────────────────────────
     interviewQuestions: [interviewQuestionSchema],
 
+    questionsByCategory: {
+      technical: { type: Number, default: 0 },
+      behavioral: { type: Number, default: 0 },
+      experience: { type: Number, default: 0 },
+      project: { type: Number, default: 0 },
+      easy: { type: Number, default: 0 },
+      medium: { type: Number, default: 0 },
+      hard: { type: Number, default: 0 },
+    },
+
     // ── Ranking position (set after all candidates for a job are scored) ───
     rank: {
       type: Number,

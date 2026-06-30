@@ -13,7 +13,7 @@
 // Now that matching (Step 7) and interview questions (Step 8) exist, the
 // detail view should also include a readiness summary so the frontend
 // doesn't need to make extra calls or compute anything client-side.
-const { analyzeResume } = require("../services/aiService"); 
+const { runFullPipeline } = require("../services/aiService"); 
 const path = require("path");
 const fs = require("fs");
 const Candidate = require("../models/Candidate");
@@ -46,12 +46,20 @@ const uploadResume = async (req, res, next) => {
     try {
     // await Candidate.findByIdAndUpdate(candidate._id, { status: "processing" });
 
-    const aiResult = await analyzeResume(filePath);
+    const aiResult = await runFullPipeline(
+      filePath,
+      candidate.jobDescription
+    );
 
     if (aiResult.success) {
-      await Candidate.findByIdAndUpdate(candidate._id, {
-        status: "analyzed",
-        parsedData: aiResult.data,
+      await Candidate.findByIdAndUpdate(candidate._id,{
+        status:"matched",
+
+        parsedData: aiResult.data.parsedResume,
+
+        matchScore: aiResult.data.matchScore,
+
+        interviewQuestions: aiResult.data.interviewQuestions
       });
     } else {
       await Candidate.findByIdAndUpdate(candidate._id, {
