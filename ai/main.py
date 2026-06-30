@@ -55,24 +55,36 @@ def run():
                 write_output(analysis)
                 return
 
-            # Stage 2: Match against job description
-            match_input = {**input_data, "parsedResume": analysis["data"]}
+            # Stage 2: Match against the job description
+            match_input = {
+                **input_data,
+                "parsedResume": analysis["data"],
+            }
+
             match_result = match_resume(match_input)
             if not match_result.get("success"):
                 write_output(match_result)
                 return
 
-            # Stage 3: Generate interview questions from parsed data
-            question_input = {**input_data, "parsedResume": analysis["data"]}
+            # Stage 3: Generate interview questions.
+            # Pass matched skills so the generator can prioritize
+            # questions relevant to the job description.
+            question_input = {
+                **input_data,
+                "parsedResume": analysis["data"],
+                "matchedSkills": match_result["data"].get("matchedSkills", []),
+            }
+
             questions_result = generate_questions(question_input)
 
-            # Combine all results into one response
+            # Combine all pipeline outputs into one response
             result = success_response({
                 "parsedResume": analysis["data"],
                 "matchScore": match_result["data"],
                 "interviewQuestions": questions_result.get("data", {}).get("questions", []),
+                "questionBreakdown": questions_result.get("data", {}).get("breakdown", {}),
             })
-
+            
         else:
             result = error_response(f"Unknown action: {action}")
 
