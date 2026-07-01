@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<!--
+  server/views/auth/register.ejs
+  Why this file exists: New recruiter sign-up page. Calls POST /api/auth/register,
+  stores the returned token (the backend auto-logs in on register, Step 3),
+  and redirects to the dashboard.
+  How it connects: Rendered by GET /register in pageRoutes.js.
+-->
+<html lang="en">
+<head>
+  <%- include('../partials/head') %>
+  <style>
+    .auth-wrapper {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: var(--space-6);
+    }
+    .auth-card { width: 100%; max-width: 420px; }
+    .auth-logo { text-align: center; margin-bottom: var(--space-8); }
+    .auth-logo h1 { font-size: var(--font-size-xl); color: var(--color-primary); }
+    .auth-logo p  { font-size: var(--font-size-sm); margin-top: var(--space-2); }
+    .auth-footer  { text-align: center; margin-top: var(--space-5); font-size: var(--font-size-sm); color: var(--color-text-secondary); }
+  </style>
+</head>
+<body>
+  <div class="auth-wrapper">
+    <div class="auth-card">
+
+      <div class="auth-logo">
+        <h1>AI Resume Screening</h1>
+        <p class="text-secondary">Create your recruiter account</p>
+      </div>
+
+      <div class="card">
+        <form id="registerForm">
+          <div class="form-group">
+            <label class="form-label" for="name">Full name</label>
+            <input type="text" id="name" class="form-input"
+                   placeholder="Jane Smith" required autocomplete="name" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="email">Email address</label>
+            <input type="email" id="email" class="form-input"
+                   placeholder="you@company.com" required autocomplete="email" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="company">
+              Company <span class="text-muted">(optional)</span>
+            </label>
+            <input type="text" id="company" class="form-input"
+                   placeholder="Acme Corp" autocomplete="organization" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="password">Password</label>
+            <input type="password" id="password" class="form-input"
+                   placeholder="At least 6 characters" required minlength="6"
+                   autocomplete="new-password" />
+            <p class="form-hint">Minimum 6 characters</p>
+          </div>
+
+          <button type="submit" id="registerBtn" class="btn btn-primary btn-block">
+            Create account
+          </button>
+        </form>
+      </div>
+
+      <p class="auth-footer">
+        Already have an account? <a href="/login">Sign in</a>
+      </p>
+    </div>
+  </div>
+
+  <%- include('../partials/footer') %>
+  <script>
+    AuthState.redirectIfAuthenticated();
+
+    document.getElementById("registerForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn      = document.getElementById("registerBtn");
+      const name     = document.getElementById("name").value.trim();
+      const email    = document.getElementById("email").value.trim();
+      const company  = document.getElementById("company").value.trim();
+      const password = document.getElementById("password").value;
+
+      if (password.length < 6) {
+        UI.showToast("Password must be at least 6 characters.", "error");
+        return;
+      }
+
+      UI.setButtonLoading(btn, true, "Creating account...");
+
+      try {
+        const res = await ApiClient.post("/auth/register", { name, email, password, company });
+        AuthState.setSession(res.data.token, res.data.user);
+        UI.showToast("Account created successfully!", "success", 1500);
+        setTimeout(() => { window.location.href = "/dashboard"; }, 400);
+      } catch (err) {
+        UI.showToast(err.message || "Registration failed. Please try again.", "error");
+        UI.setButtonLoading(btn, false);
+      }
+    });
+  </script>
+</body>
+</html>

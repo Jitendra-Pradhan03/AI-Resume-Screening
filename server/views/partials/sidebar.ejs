@@ -1,0 +1,43 @@
+<!-- server/views/partials/sidebar.ejs
+     Why this partial exists: Every authenticated page shares the same
+     sidebar navigation. Defining it once here means adding a new nav link
+     requires editing only this file.
+     How it connects: Included inside the .app-shell div of authenticated
+     page layouts. The `activePage` variable (passed from each EJS page via
+     include options) controls which link is highlighted.
+     Key concept: EJS partials receive variables through the `locals` object.
+     We use `locals.activePage` so pages that don't pass it don't throw. -->
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <h2>AI Resume</h2>
+    <p>Screening Assistant</p>
+  </div>
+
+  <nav class="sidebar-nav">
+    <a href="/dashboard"  class="sidebar-link <%= locals.activePage === 'dashboard'  ? 'active' : '' %>">
+      <span class="sidebar-icon">📊</span> Dashboard
+    </a>
+    <a href="/upload"     class="sidebar-link <%= locals.activePage === 'upload'     ? 'active' : '' %>">
+      <span class="sidebar-icon">📄</span> Upload Resume
+    </a>
+    <a href="/jobs"       class="sidebar-link <%= locals.activePage === 'jobs'       ? 'active' : '' %>">
+      <span class="sidebar-icon">💼</span> Job Descriptions
+    </a>
+    <a href="/dashboard"  class="sidebar-link <%= locals.activePage === 'candidates' ? 'active' : '' %>">
+      <span class="sidebar-icon">👥</span> All Candidates
+    </a>
+  </nav>
+
+  <div class="sidebar-footer">
+    <!-- User info is loaded from localStorage by sidebar.js after the page loads -->
+    <div class="sidebar-user">
+      <div class="sidebar-avatar" id="sidebarAvatar">?</div>
+      <div>
+        <p class="sidebar-user-name" id="sidebarName">Loading...</p>
+        <p class="sidebar-user-company" id="sidebarCompany"></p>
+      </div>
+    </div>
+    <button class="sidebar-logout" id="logoutBtn">Sign out</button>
+  </div>
+</aside>

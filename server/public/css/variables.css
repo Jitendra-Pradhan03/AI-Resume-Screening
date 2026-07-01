@@ -1,0 +1,94 @@
+/* server/public/css/variables.css
+   Why this file exists: Single source of truth for the entire design system.
+   Every color, spacing value, font size, and shadow is defined here as a
+   CSS custom property. Pages and components reference var(--color-primary)
+   rather than hardcoded hex values — changing a color here updates the
+   whole application.
+   How it connects: Loaded first in partials/head.ejs, before all other CSS. */
+
+:root {
+  /* ── Brand palette — muted, corporate blue/slate ── */
+  --color-primary:       #2c4a6e;
+  --color-primary-hover: #21384f;
+  --color-primary-light: #e8eef4;
+
+  --color-secondary: #5a6b7d;
+  --color-accent:    #3d7a6e;
+
+  /* ── Semantic status colors ── */
+  --color-success:    #3d7a52;
+  --color-success-bg: #e7f2ea;
+  --color-warning:    #a9772e;
+  --color-warning-bg: #faf1e3;
+  --color-danger:     #a13d3d;
+  --color-danger-bg:  #f7e9e9;
+  --color-info:       #3a6c8a;
+  --color-info-bg:    #e6f0f5;
+
+  /* ── Surface and border neutrals ── */
+  --color-bg:           #f5f6f8;
+  --color-surface:      #ffffff;
+  --color-border:       #d9dce1;
+  --color-border-light: #e8eaed;
+
+  /* ── Text ── */
+  --color-text-primary:   #1f2937;
+  --color-text-secondary: #5b6472;
+  --color-text-muted:     #8b93a1;
+  --color-text-inverse:   #ffffff;
+
+  /* ── Typography ── */
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-size-xs:   0.75rem;
+  --font-size-sm:   0.875rem;
+  --font-size-base: 1rem;
+  --font-size-lg:   1.125rem;
+  --font-size-xl:   1.375rem;
+  --font-size-2xl:  1.75rem;
+  --font-size-3xl:  2.25rem;
+
+  --font-weight-normal:   400;
+  --font-weight-medium:   500;
+  --font-weight-semibold: 600;
+  --font-weight-bold:     700;
+
+  --line-height-tight:   1.25;
+  --line-height-normal:  1.5;
+  --line-height-relaxed: 1.7;
+
+  /* ── Spacing scale ── */
+  --space-1:  0.25rem;
+  --space-2:  0.5rem;
+  --space-3:  0.75rem;
+  --space-4:  1rem;
+  --space-5:  1.25rem;
+  --space-6:  1.5rem;
+  --space-8:  2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  /* ── Borders and radius ── */
+  --radius-sm:   4px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-full: 9999px;
+
+  /* ── Shadows — subtle, professional ── */
+  --shadow-sm: 0 1px 2px rgba(15,23,42,0.06);
+  --shadow-md: 0 2px 8px rgba(15,23,42,0.08);
+  --shadow-lg: 0 4px 16px rgba(15,23,42,0.10);
+
+  /* ── Transitions ── */
+  --transition-fast:   150ms ease;
+  --transition-normal: 250ms ease;
+
+  /* ── Layout ── */
+  --sidebar-width:       240px;
+  --container-max-width: 1280px;
+
+  /* ── Z-index scale ── */
+  --z-dropdown: 100;
+  --z-modal:    200;
+  --z-toast:    300;
+}

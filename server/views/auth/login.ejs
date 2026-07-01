@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<!--
+  server/views/auth/login.ejs
+  Why this file exists: Provides the sign-in page. EJS renders the HTML
+  shell server-side. The actual login call (POST /api/auth/login) happens
+  client-side via ApiClient.post() so the JWT token can be stored in
+  localStorage without a page redirect through the server.
+  How it connects: Rendered by GET /login in pageRoutes.js.
+  Shares head.ejs and footer.ejs partials.
+-->
+<html lang="en">
+<head>
+  <%- include('../partials/head') %>
+  <style>
+    .auth-wrapper {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: var(--space-6);
+    }
+    .auth-card { width: 100%; max-width: 400px; }
+    .auth-logo { text-align: center; margin-bottom: var(--space-8); }
+    .auth-logo h1 { font-size: var(--font-size-xl); color: var(--color-primary); }
+    .auth-logo p  { font-size: var(--font-size-sm); margin-top: var(--space-2); }
+    .auth-footer  { text-align: center; margin-top: var(--space-5); font-size: var(--font-size-sm); color: var(--color-text-secondary); }
+  </style>
+</head>
+<body>
+  <div class="auth-wrapper">
+    <div class="auth-card">
+
+      <div class="auth-logo">
+        <h1>AI Resume Screening</h1>
+        <p class="text-secondary">Sign in to your recruiter account</p>
+      </div>
+
+      <div class="card">
+        <form id="loginForm">
+          <div class="form-group">
+            <label class="form-label" for="email">Email address</label>
+            <input type="email" id="email" class="form-input"
+                   placeholder="you@company.com" required autocomplete="email" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="password">Password</label>
+            <input type="password" id="password" class="form-input"
+                   placeholder="••••••••" required autocomplete="current-password" />
+          </div>
+
+          <button type="submit" id="loginBtn" class="btn btn-primary btn-block">
+            Sign in
+          </button>
+        </form>
+      </div>
+
+      <p class="auth-footer">
+        Don't have an account? <a href="/register">Create one</a>
+      </p>
+    </div>
+  </div>
+
+  <%- include('../partials/footer') %>
+  <script>
+    // If already logged in, skip to dashboard immediately
+    AuthState.redirectIfAuthenticated();
+
+    document.getElementById("loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn   = document.getElementById("loginBtn");
+      const email    = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+
+      UI.setButtonLoading(btn, true, "Signing in...");
+
+      try {
+        const res = await ApiClient.post("/auth/login", { email, password });
+        AuthState.setSession(res.data.token, res.data.user);
+        UI.showToast("Welcome back!", "success", 1500);
+        setTimeout(() => { window.location.href = "/dashboard"; }, 400);
+      } catch (err) {
+        UI.showToast(err.message || "Login failed. Please try again.", "error");
+        UI.setButtonLoading(btn, false);
+      }
+    });
+  </script>
+</body>
+</html>

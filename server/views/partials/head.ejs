@@ -1,0 +1,13 @@
+<!-- server/views/partials/head.ejs
+     Why this partial exists: Every page needs the same <meta> tags, CSS
+     links, and favicon. Including this once via  keeps
+     all pages in sync — change a CSS file name here and every page updates.
+     How it connects: Included as the first child of <head> in every layout. -->
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title><%= title %> — AI Resume Screening</title>
+
+<!-- Core design system — order matters: variables first, then base, then components -->
+<link rel="stylesheet" href="/css/variables.css" />
+<link rel="stylesheet" href="/css/base.css" />
+<link rel="stylesheet" href="/css/components.css" />

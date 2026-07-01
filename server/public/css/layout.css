@@ -1,0 +1,101 @@
+/* server/public/css/layout.css
+   Why this file exists: The sidebar + main content shell is shared across
+   every authenticated page (dashboard, upload, candidate, rankings, jobs).
+   Defining the layout once here means every page just uses class="app-shell"
+   and gets the full two-column layout automatically.
+   How it connects: Loaded via <link> inside authenticated EJS pages only
+   (not login/register which use a simpler centered layout). */
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ── Sidebar ── */
+.sidebar {
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+  background-color: var(--color-surface);
+  border-right: 1px solid var(--color-border-light);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.sidebar-logo { padding: var(--space-6) var(--space-5); border-bottom: 1px solid var(--color-border-light); }
+.sidebar-logo h2 { font-size: var(--font-size-lg); color: var(--color-primary); }
+.sidebar-logo p  { font-size: var(--font-size-xs); color: var(--color-text-muted); margin-top: var(--space-1); }
+
+.sidebar-nav {
+  flex: 1;
+  padding: var(--space-4) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  transition: all var(--transition-fast);
+}
+.sidebar-link:hover  { background-color: var(--color-bg); color: var(--color-text-primary); }
+.sidebar-link.active { background-color: var(--color-primary-light); color: var(--color-primary); }
+.sidebar-icon { font-size: 1.1rem; }
+
+.sidebar-footer { padding: var(--space-4) var(--space-5); border-top: 1px solid var(--color-border-light); }
+.sidebar-user   { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
+.sidebar-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: var(--font-weight-semibold);
+  flex-shrink: 0;
+}
+.sidebar-user-name    { font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--color-text-primary); }
+.sidebar-user-company { font-size: var(--font-size-xs); color: var(--color-text-muted); }
+.sidebar-logout {
+  width: 100%;
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+}
+.sidebar-logout:hover { background-color: var(--color-danger-bg); color: var(--color-danger); }
+
+/* ── Main content ── */
+.main-content { flex: 1; min-width: 0; padding: var(--space-8); }
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: var(--space-8);
+}
+.page-header h1 { font-size: var(--font-size-2xl); }
+.page-header p  { margin-top: var(--space-1); }
+
+/* ── Responsive — collapse sidebar on narrow screens ── */
+@media (max-width: 900px) {
+  .app-shell    { flex-direction: column; }
+  .sidebar      { width: 100%; height: auto; position: static; overflow-x: auto; }
+  .sidebar-nav  { flex-direction: row; padding: var(--space-2) var(--space-3); }
+  .sidebar-footer { display: none; }
+  .main-content { padding: var(--space-5); }
+}
