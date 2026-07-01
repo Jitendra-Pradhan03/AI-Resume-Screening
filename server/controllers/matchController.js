@@ -75,11 +75,26 @@ const matchSingleResume = async (req, res, next) => {
     if (aiResult.data.questionBreakdown) {
       updateData.questionsByCategory = aiResult.data.questionBreakdown;
     }
-    const updated = await Candidate.findByIdAndUpdate(
-      candidateId,
-      updateData,
-      { new: true }
-    );
+    // Save the matched candidate
+    await Candidate.findByIdAndUpdate(candidateId, updateData);
+
+    // Fetch all matched candidates for this job
+    const matchedCandidates = await Candidate.find({
+      recruiter: req.user._id,
+      jobDescription: jobDescriptionId,
+      status: "matched",
+    }).sort({
+      "matchScore.weightedFinalScore": -1,
+    });
+
+    // Assign ranks based on score
+    for (let i = 0; i < matchedCandidates.length; i++) {
+      matchedCandidates[i].rank = i + 1;
+      await matchedCandidates[i].save();
+    }
+
+    // Fetch the updated candidate with its new rank
+    const updated = await Candidate.findById(candidateId);
 
     return sendSuccess(res, 200, "Resume matched successfully", {
       candidate: {
@@ -87,6 +102,7 @@ const matchSingleResume = async (req, res, next) => {
         name: updated.parsedData?.name || updated.originalFileName,
         matchScore: updated.matchScore,
         status: updated.status,
+        rank: updated.rank,
       },
     });
   } catch (error) {

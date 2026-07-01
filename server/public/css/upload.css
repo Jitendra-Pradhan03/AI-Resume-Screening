@@ -1,0 +1,255 @@
+/* server/public/css/upload.css
+   Why this file exists: Upload page-specific styles for the drag-and-drop
+   zone, step indicator, file preview card, and status polling UI.
+   These are too specific to belong in components.css.
+   How it connects: Loaded only inside upload.ejs via a <link> tag. */
+
+/* ── Two-column upload layout ── */
+.upload-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+/* ── Step indicator strip ── */
+.step-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: var(--space-8);
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+}
+
+.step-number {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border);
+  background-color: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all var(--transition-normal);
+}
+
+.step-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-medium);
+  transition: color var(--transition-normal);
+}
+
+/* Connector line between steps */
+.step-connector {
+  height: 2px;
+  flex: 1;
+  background-color: var(--color-border);
+  margin: 0 var(--space-2);
+  transition: background-color var(--transition-normal);
+}
+
+/* Active step */
+.step.active .step-number {
+  border-color: var(--color-primary);
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse);
+}
+.step.active .step-label { color: var(--color-text-primary); }
+
+/* Completed step */
+.step.completed .step-number {
+  border-color: var(--color-success);
+  background-color: var(--color-success);
+  color: var(--color-text-inverse);
+}
+.step.completed .step-label { color: var(--color-success); }
+.step.completed + .step-connector { background-color: var(--color-success); }
+
+/* ── Drag-and-drop upload zone ── */
+.drop-zone {
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-12) var(--space-6);
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  background-color: var(--color-surface);
+  position: relative;
+}
+
+.drop-zone:hover,
+.drop-zone.drag-over {
+  border-color: var(--color-primary);
+  background-color: var(--color-primary-light);
+}
+
+.drop-zone-icon {
+  font-size: 2.5rem;
+  margin-bottom: var(--space-4);
+  opacity: 0.5;
+}
+
+.drop-zone-title {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-2);
+}
+
+.drop-zone-sub {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+/* Hidden real file input — the drop zone acts as its visual proxy */
+.file-input-hidden {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* ── File preview card (shown after a file is selected) ── */
+.file-preview {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background-color: var(--color-primary-light);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  margin-top: var(--space-4);
+}
+
+.file-preview-icon {
+  font-size: 1.75rem;
+  flex-shrink: 0;
+}
+
+.file-preview-info { flex: 1; min-width: 0; }
+
+.file-preview-name {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-preview-size {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.file-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  font-size: 1.2rem;
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  transition: color var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.file-remove:hover { color: var(--color-danger); }
+
+/* ── Upload progress bar ── */
+.upload-progress {
+  margin-top: var(--space-4);
+}
+
+.upload-progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-2);
+}
+
+/* ── JD source tabs (paste vs select existing) ── */
+.jd-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--color-border-light);
+  margin-bottom: var(--space-5);
+  gap: 0;
+}
+
+.jd-tab {
+  padding: var(--space-3) var(--space-5);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+}
+
+.jd-tab:hover { color: var(--color-text-primary); }
+
+.jd-tab.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+/* ── AI status polling card ── */
+.status-card {
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  margin-top: var(--space-5);
+}
+
+.status-stage {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  font-size: var(--font-size-sm);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.status-stage:last-child { border-bottom: none; }
+
+.status-stage-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.stage-pending  { background-color: var(--color-bg); }
+.stage-running  { background-color: var(--color-warning-bg); }
+.stage-done     { background-color: var(--color-success-bg); }
+.stage-error    { background-color: var(--color-danger-bg); }
+
+.status-stage-label { flex: 1; color: var(--color-text-primary); }
+.status-stage-sub   { font-size: var(--font-size-xs); color: var(--color-text-muted); }
+
+@media (max-width: 900px) {
+  .upload-layout { grid-template-columns: 1fr; }
+}

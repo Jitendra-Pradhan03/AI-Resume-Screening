@@ -1,9 +1,255 @@
 <!DOCTYPE html>
-<html>
+<!--
+  server/views/dashboard/dashboard.ejs
+
+  Why this file exists: Main recruiter home page. Shows aggregate stats,
+  recent upload activity, and top-ranked candidates per job posting.
+
+  How it connects:
+    - Rendered by GET /dashboard in pageRoutes.js via res.render("dashboard/dashboard")
+    - Loads shared partials: head, sidebar, footer
+    - On page load the inline <script> calls GET /api/dashboard (Step 9)
+      and renders the response into the DOM with vanilla JS
+
+  Data flow:
+    Browser → GET /dashboard → EJS renders shell → JS fetches /api/dashboard
+    → renderStats(), renderActivity(), renderJobsOverview() populate the DOM
+-->
+<html lang="en">
 <head>
-    <title>Dashboard</title>
+  <%- include('../partials/head') %>
+  <link rel="stylesheet" href="/css/layout.css" />
+  <link rel="stylesheet" href="/css/dashboard.css" />
 </head>
 <body>
-    <h1>Dashboard Working ✅</h1>
+<div class="app-shell">
+
+  <!-- Sidebar partial. activePage highlights the correct nav link. -->
+  <%- include('../partials/sidebar', { activePage: 'dashboard' }) %>
+
+  <main class="main-content">
+
+    <!-- Page header -->
+    <div class="page-header">
+      <div>
+        <h1>Dashboard</h1>
+        <p class="text-secondary">Overview of your recruiting activity</p>
+      </div>
+      <a href="/upload" class="btn btn-primary">+ Upload Resume</a>
+    </div>
+
+    <!-- Stat cards — populated by renderStats() -->
+    <div class="stats-grid" id="statsGrid">
+      <div class="page-loading">
+        <span class="spinner spinner-dark spinner-lg"></span>
+      </div>
+    </div>
+
+    <!-- Two-column lower section -->
+    <div class="dashboard-grid">
+
+      <!-- Left column: recent activity feed -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Recent Activity</h3>
+        </div>
+        <div class="activity-list" id="activityList">
+          <div class="page-loading">
+            <span class="spinner spinner-dark"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right column: per-job top candidates -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Job Postings &amp; Top Candidates</h3>
+          <a href="/jobs" class="btn btn-secondary btn-sm">Manage Jobs</a>
+        </div>
+        <div class="job-overview-list" id="jobsOverview">
+          <div class="page-loading">
+            <span class="spinner spinner-dark"></span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<%- include('../partials/footer', { includesSidebar: true }) %>
+
+<script>
+  /* Require auth — if no token in localStorage, redirect to /login */
+  AuthState.requireAuth();
+
+  /* ── Load dashboard data ──────────────────────────────────────────────── */
+  async function loadDashboard() {
+    try {
+      const res = await ApiClient.get("/dashboard");
+      const { summary, recentActivity, jobsOverview } = res.data;
+
+      renderStats(summary);
+      renderActivity(recentActivity);
+      renderJobsOverview(jobsOverview);
+    } catch (err) {
+      UI.showToast(err.message || "Failed to load dashboard data.", "error");
+
+      /* Show an error state in each section instead of a spinner */
+      const errorHtml = `
+        <div class="empty-state">
+          <div class="empty-state-icon">⚠️</div>
+          <p>Could not load data. Please refresh the page.</p>
+        </div>`;
+      document.getElementById("statsGrid").innerHTML    = errorHtml;
+      document.getElementById("activityList").innerHTML = errorHtml;
+      document.getElementById("jobsOverview").innerHTML = errorHtml;
+    }
+  }
+
+  /* ── Render stat cards ────────────────────────────────────────────────── */
+  function renderStats(summary) {
+    const sc = summary.statusCounts;
+
+    /* Build the mini status-breakdown strip shown under the candidate count */
+    const statusLabels = {
+      uploaded: "Uploaded", processing: "Processing",
+      analyzed: "Analyzed", matched: "Matched", error: "Error"
+    };
+
+    const breakdownHtml = Object.entries(sc)
+      .filter(([, count]) => count > 0)
+      .map(([status, count]) => `
+        <div class="status-breakdown-item">
+          <span class="status-dot dot-${status}"></span>
+          ${statusLabels[status]}: ${count}
+        </div>`)
+      .join("");
+
+    document.getElementById("statsGrid").innerHTML = `
+      <div class="stat-card accent-primary">
+        <div class="stat-card-label">Total Candidates</div>
+        <div class="stat-card-value">${summary.totalCandidates}</div>
+        <div class="status-breakdown">${breakdownHtml || '<span class="text-muted">No uploads yet</span>'}</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-card-label">Job Postings</div>
+        <div class="stat-card-value">${summary.totalJobDescriptions}</div>
+        <div class="stat-card-sub">Active job descriptions</div>
+      </div>
+
+      <div class="stat-card accent-success">
+        <div class="stat-card-label">Avg. Match Score</div>
+        <div class="stat-card-value">${summary.averageMatchScore || 0}%</div>
+        <div class="stat-card-sub">Across matched candidates</div>
+      </div>
+
+      <div class="stat-card accent-warning">
+        <div class="stat-card-label">Pending Review</div>
+        <div class="stat-card-value">${(sc.uploaded || 0) + (sc.processing || 0)}</div>
+        <div class="stat-card-sub">Uploaded but not yet analyzed</div>
+      </div>
+    `;
+  }
+
+  /* ── Render recent activity feed ─────────────────────────────────────── */
+  function renderActivity(activity) {
+    const container = document.getElementById("activityList");
+
+    if (!activity || !activity.length) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">📄</div>
+          <p>No resumes uploaded yet.</p>
+          <a href="/upload" class="btn btn-primary btn-sm" style="margin-top:var(--space-3)">
+            Upload your first resume
+          </a>
+        </div>`;
+      return;
+    }
+
+    container.innerHTML = activity.map(item => {
+      const initial   = (item.name || "?").charAt(0).toUpperCase();
+      const scoreHtml = item.score != null
+        ? `<span class="activity-score" style="color:${UI.scoreToColor(item.score)}">
+             ${item.score.toFixed(0)}%
+           </span>`
+        : "";
+
+      return `
+        <div class="activity-item"
+             onclick="window.location.href='/candidate/${UI.escapeHtml(item.id)}'">
+          <div class="activity-avatar">${initial}</div>
+          <div class="activity-info">
+            <div class="activity-name">${UI.escapeHtml(item.name || "Unknown")}</div>
+            <div class="activity-meta">
+              ${UI.statusBadge(item.status)}
+              ${item.jobTitle ? `<span>· ${UI.escapeHtml(item.jobTitle)}</span>` : ""}
+              <span>· ${UI.formatRelativeTime(item.uploadedAt)}</span>
+            </div>
+          </div>
+          ${scoreHtml}
+        </div>`;
+    }).join("");
+  }
+
+  /* ── Render per-job top-candidate panels ─────────────────────────────── */
+  function renderJobsOverview(jobs) {
+    const container = document.getElementById("jobsOverview");
+
+    if (!jobs || !jobs.length) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">💼</div>
+          <p>No job descriptions created yet.</p>
+          <a href="/jobs" class="btn btn-primary btn-sm" style="margin-top:var(--space-3)">
+            Create a job description
+          </a>
+        </div>`;
+      return;
+    }
+
+    container.innerHTML = jobs.map(job => {
+      /* Build ranked candidate rows for this job */
+      const rowsHtml = job.topCandidates && job.topCandidates.length
+        ? job.topCandidates.map(c => `
+            <div class="top-candidate-row">
+              <div class="top-candidate-rank ${c.rank === 1 ? "rank-1" : ""}">${c.rank}</div>
+              <div class="top-candidate-name">${UI.escapeHtml(c.name || "Unknown")}</div>
+              <div class="top-candidate-score"
+                   style="color:${UI.scoreToColor(c.score)}">
+                ${c.score.toFixed(0)}%
+              </div>
+            </div>`).join("")
+        : `<p class="text-muted" style="font-size:var(--font-size-sm);padding:var(--space-2) 0">
+             No matched candidates yet.
+           </p>`;
+
+      return `
+        <div class="job-overview-card">
+          <div class="job-overview-header">
+            <div>
+              <div class="job-overview-title">${UI.escapeHtml(job.jobTitle)}</div>
+              ${job.company
+                ? `<div class="job-overview-company">${UI.escapeHtml(job.company)}</div>`
+                : ""}
+            </div>
+            <span class="job-overview-count">
+              ${job.matchedCandidates}/${job.totalCandidates} matched
+            </span>
+          </div>
+          ${rowsHtml}
+          <div style="margin-top:var(--space-3)">
+            <a href="/rankings/${UI.escapeHtml(job.jobId)}"
+               class="btn btn-secondary btn-sm">View rankings</a>
+          </div>
+        </div>`;
+    }).join("");
+  }
+
+  /* Kick everything off as soon as the page loads */
+  loadDashboard();
+</script>
 </body>
 </html>

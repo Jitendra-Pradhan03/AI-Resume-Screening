@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<!--
+  server/views/dashboard/upload.ejs
+
+  Why this file exists: Provides the complete resume upload workflow in
+  three sequential stages:
+    1. Select/drag-drop a PDF resume → POST /api/resume/upload
+    2. Attach a job description (paste text or select existing)
+       → POST /api/match/single
+    3. Watch the AI pipeline run → poll GET /api/resume/:id every 3s
+       until status reaches "analyzed", "matched", or "error"
+
+  How it connects:
+    - Rendered by GET /upload in pageRoutes.js
+    - Uses sidebar partial for navigation
+    - All data operations go through the existing REST API
+    - On completion, navigates to /candidate/:id (Step 13)
+-->
+<html lang="en">
+<head>
+  <%- include('../partials/head') %>
+  <link rel="stylesheet" href="/css/layout.css" />
+  <link rel="stylesheet" href="/css/upload.css" />
+</head>
+<body>
+<div class="app-shell">
+
+  <%- include('../partials/sidebar', { activePage: 'upload' }) %>
+
+  <main class="main-content">
+
+    <!-- Page header -->
+    <div class="page-header">
+      <div>
+        <h1>Upload Resume</h1>
+        <p class="text-secondary">Upload a PDF resume and match it against a job description</p>
+      </div>
+    </div>
+
+    <!-- Step indicator -->
+    <div class="step-indicator">
+      <div class="step active" id="step1">
+        <div class="step-number" id="stepNum1">1</div>
+        <span class="step-label">Upload PDF</span>
+      </div>
+      <div class="step-connector" id="conn1"></div>
+      <div class="step" id="step2">
+        <div class="step-number" id="stepNum2">2</div>
+        <span class="step-label">Job Description</span>
+      </div>
+      <div class="step-connector" id="conn2"></div>
+      <div class="step" id="step3">
+        <div class="step-number" id="stepNum3">3</div>
+        <span class="step-label">AI Analysis</span>
+      </div>
+    </div>
+
+    <!-- ════ STAGE 1: PDF Upload ════ -->
+    <div id="stage1">
+      <div class="upload-layout">
+
+        <!-- Left: drop zone -->
+        <div class="card">
+          <h3 class="card-title" style="margin-bottom: var(--space-5);">Resume PDF</h3>
+
+          <div class="drop-zone" id="dropZone">
+            <input type="file" accept=".pdf" class="file-input-hidden" id="fileInput" />
+            <div class="drop-zone-icon">📄</div>
+            <div class="drop-zone-title">Drop your PDF here</div>
+            <div class="drop-zone-sub">or click to browse &mdash; max 5 MB</div>
+          </div>
+
+          <!-- File preview (hidden until a file is chosen) -->
+          <div class="file-preview hidden" id="filePreview">
+            <div class="file-preview-icon">📄</div>
+            <div class="file-preview-info">
+              <div class="file-preview-name" id="previewName"></div>
+              <div class="file-preview-size" id="previewSize"></div>
+            </div>
+            <button class="file-remove" id="fileRemove" title="Remove file">✕</button>
+          </div>
+
+          <!-- Upload progress (hidden until upload starts) -->
+          <div class="upload-progress hidden" id="uploadProgress">
+            <div class="upload-progress-label">
+              <span>Uploading...</span>
+              <span id="uploadPct">0%</span>
+            </div>
+            <div class="progress">
+              <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <button class="btn btn-primary btn-block" id="uploadBtn"
+                  style="margin-top: var(--space-5);" disabled>
+            Upload Resume
+          </button>
+        </div>
+
+        <!-- Right: instructions card -->
+        <div class="card">
+          <h3 class="card-title" style="margin-bottom: var(--space-5);">What happens next</h3>
+          <div style="display: flex; flex-direction: column; gap: var(--space-4);">
+            <div style="display: flex; gap: var(--space-3); align-items: flex-start;">
+              <div style="width:28px; height:28px; border-radius:50%; background:var(--color-primary-light);
+                          color:var(--color-primary); display:flex; align-items:center;
+                          justify-content:center; font-weight:600; flex-shrink:0;">1</div>
+              <div>
+                <div style="font-weight:var(--font-weight-medium); font-size:var(--font-size-sm);">
+                  Upload the PDF</div>
+                <div style="font-size:var(--font-size-xs); color:var(--color-text-muted); margin-top:2px;">
+                  We store it securely and extract the text</div>
+              </div>
+            </div>
+            <div style="display: flex; gap: var(--space-3); align-items: flex-start;">
+              <div style="width:28px; height:28px; border-radius:50%; background:var(--color-primary-light);
+                          color:var(--color-primary); display:flex; align-items:center;
+                          justify-content:center; font-weight:600; flex-shrink:0;">2</div>
+              <div>
+                <div style="font-weight:var(--font-weight-medium); font-size:var(--font-size-sm);">
+                  Attach a job description</div>
+                <div style="font-size:var(--font-size-xs); color:var(--color-text-muted); margin-top:2px;">
+                  Paste text or select one you saved earlier</div>
+              </div>
+            </div>
+            <div style="display: flex; gap: var(--space-3); align-items: flex-start;">
+              <div style="width:28px; height:28px; border-radius:50%; background:var(--color-primary-light);
+                          color:var(--color-primary); display:flex; align-items:center;
+                          justify-content:center; font-weight:600; flex-shrink:0;">3</div>
+              <div>
+                <div style="font-weight:var(--font-weight-medium); font-size:var(--font-size-sm);">
+                  AI analyses the resume</div>
+                <div style="font-size:var(--font-size-xs); color:var(--color-text-muted); margin-top:2px;">
+                  Extracts skills, scores the match, generates interview questions</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div><!-- /stage1 -->
+
+    <!-- ════ STAGE 2: Job Description ════ -->
+    <div id="stage2" class="hidden">
+      <div class="upload-layout">
+
+        <!-- Left: JD form -->
+        <div class="card">
+          <h3 class="card-title" style="margin-bottom: var(--space-5);">Job Description</h3>
+
+          <!-- Tabs: paste vs select existing -->
+          <div class="jd-tabs">
+            <button class="jd-tab active" id="tabPaste"
+                    onclick="switchTab('paste')">Paste text</button>
+            <button class="jd-tab" id="tabSelect"
+                    onclick="switchTab('select')">Select existing</button>
+          </div>
+
+          <!-- Paste tab content -->
+          <div id="panePaste">
+            <div class="form-group">
+              <label class="form-label" for="jdTitle">Job title</label>
+              <input type="text" id="jdTitle" class="form-input"
+                     placeholder="e.g. Backend Node.js Developer" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="jdText">Job description</label>
+              <textarea id="jdText" class="form-textarea" rows="10"
+                        placeholder="Paste the full job description here..."></textarea>
+              <p class="form-hint">Minimum 50 characters</p>
+            </div>
+          </div>
+
+          <!-- Select existing tab content -->
+          <div id="paneSelect" class="hidden">
+            <p class="text-secondary" style="font-size:var(--font-size-sm); margin-bottom:var(--space-4);">
+              Choose from a job description you created earlier.
+            </p>
+            <div id="jdList" style="display:flex; flex-direction:column; gap:var(--space-2);">
+              <div class="page-loading" style="padding:var(--space-6);">
+                <span class="spinner spinner-dark"></span>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex; gap:var(--space-3); margin-top:var(--space-5);">
+            <button class="btn btn-secondary" onclick="goToStage(1)">Back</button>
+            <button class="btn btn-primary" id="runMatchBtn" style="flex:1;">
+              Run AI Analysis
+            </button>
+          </div>
+        </div>
+
+        <!-- Right: uploaded file summary -->
+        <div class="card">
+          <h3 class="card-title" style="margin-bottom:var(--space-5);">Uploaded resume</h3>
+          <div class="file-preview" id="stage2FileCard">
+            <div class="file-preview-icon">📄</div>
+            <div class="file-preview-info">
+              <div class="file-preview-name" id="stage2FileName"></div>
+              <div class="file-preview-size" id="stage2FileSize"></div>
+            </div>
+          </div>
+          <p class="text-muted" style="font-size:var(--font-size-xs); margin-top:var(--space-3);">
+            The AI will parse this PDF, extract skills and experience, then score
+            it against the job description you provide.
+          </p>
+        </div>
+
+      </div>
+    </div><!-- /stage2 -->
+
+    <!-- ════ STAGE 3: AI Pipeline Status ════ -->
+    <div id="stage3" class="hidden">
+      <div style="max-width: 560px; margin: 0 auto;">
+        <div class="card">
+          <h3 class="card-title" style="margin-bottom:var(--space-5);">AI Analysis in Progress</h3>
+
+          <div class="status-card">
+
+            <div class="status-stage" id="stageParse">
+              <div class="status-stage-icon stage-pending" id="parseIcon">⏳</div>
+              <div>
+                <div class="status-stage-label">Parsing resume PDF</div>
+                <div class="status-stage-sub">Extracting text and contact info</div>
+              </div>
+            </div>
+
+            <div class="status-stage" id="stageNlp">
+              <div class="status-stage-icon stage-pending" id="nlpIcon">⏳</div>
+              <div>
+                <div class="status-stage-label">NLP &amp; skill extraction</div>
+                <div class="status-stage-sub">Tokenising, lemmatising, matching skills</div>
+              </div>
+            </div>
+
+            <div class="status-stage" id="stageEmbed">
+              <div class="status-stage-icon stage-pending" id="embedIcon">⏳</div>
+              <div>
+                <div class="status-stage-label">Generating embeddings</div>
+                <div class="status-stage-sub">Running sentence-transformers model</div>
+              </div>
+            </div>
+
+            <div class="status-stage" id="stageMatch">
+              <div class="status-stage-icon stage-pending" id="matchIcon">⏳</div>
+              <div>
+                <div class="status-stage-label">Scoring match</div>
+                <div class="status-stage-sub">Cosine similarity + weighted score</div>
+              </div>
+            </div>
+
+            <div class="status-stage" id="stageQuestions">
+              <div class="status-stage-icon stage-pending" id="questionsIcon">⏳</div>
+              <div>
+                <div class="status-stage-label">Generating interview questions</div>
+                <div class="status-stage-sub">Personalised to skills and experience</div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Result area (hidden until complete) -->
+          <div id="analysisResult" class="hidden" style="margin-top:var(--space-5);">
+            <div id="resultContent"></div>
+            <a id="viewCandidateBtn" href="#"
+               class="btn btn-primary btn-block" style="margin-top:var(--space-4);">
+              View full candidate report
+            </a>
+          </div>
+
+          <!-- Error area (hidden unless something went wrong) -->
+          <div id="analysisError" class="hidden"
+               style="margin-top:var(--space-4); padding:var(--space-4);
+                      background:var(--color-danger-bg); border-radius:var(--radius-md);">
+            <p style="font-size:var(--font-size-sm); color:var(--color-danger);"
+               id="errorMessage"></p>
+            <button class="btn btn-secondary btn-sm" style="margin-top:var(--space-3);"
+                    onclick="goToStage(1)">Start over</button>
+          </div>
+
+        </div>
+      </div>
+    </div><!-- /stage3 -->
+
+  </main>
+</div>
+
+<%- include('../partials/footer', { includesSidebar: true }) %>
+
+<script>
+  /* Require authentication before anything runs */
+  AuthState.requireAuth();
+
+  /* ── State kept in memory for the lifetime of this page visit ── */
+  const state = {
+    selectedFile:   null,   /* File object from the input */
+    uploadedId:     null,   /* Candidate._id returned after upload */
+    uploadedName:   null,   /* Original file name */
+    uploadedSize:   null,   /* File size in bytes */
+    selectedJdId:   null,   /* JobDescription._id if user picks an existing JD */
+    activeJdTab:    "paste",/* "paste" | "select" */
+    pollTimer:      null,   /* setInterval handle for status polling */
+    pollCount:      0,      /* Safety counter so we never poll forever */
+  };
+
+  /* ── DOM references ── */
+  const dropZone     = document.getElementById("dropZone");
+  const fileInput    = document.getElementById("fileInput");
+  const filePreview  = document.getElementById("filePreview");
+  const previewName  = document.getElementById("previewName");
+  const previewSize  = document.getElementById("previewSize");
+  const fileRemove   = document.getElementById("fileRemove");
+  const uploadBtn    = document.getElementById("uploadBtn");
+  const uploadProgress = document.getElementById("uploadProgress");
+  const progressBar  = document.getElementById("progressBar");
+  const uploadPct    = document.getElementById("uploadPct");
+  const runMatchBtn  = document.getElementById("runMatchBtn");
+
+  /* ═══════════════════════════════════════════════════════
+     STAGE 1 — File selection and upload
+  ═══════════════════════════════════════════════════════ */
+
+  /* Drag events — visual feedback only */
+  dropZone.addEventListener("dragover",  e => { e.preventDefault(); dropZone.classList.add("drag-over"); });
+  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+  dropZone.addEventListener("drop", e => {
+    e.preventDefault();
+    dropZone.classList.remove("drag-over");
+    const file = e.dataTransfer.files[0];
+    if (file) handleFileSelected(file);
+  });
+
+  /* Click on the invisible <input> inside the drop zone */
+  fileInput.addEventListener("change", e => {
+    if (e.target.files[0]) handleFileSelected(e.target.files[0]);
+  });
+
+  function handleFileSelected(file) {
+    /* Validate type client-side before even sending to the server */
+    if (file.type !== "application/pdf") {
+      UI.showToast("Only PDF files are accepted.", "error");
+      return;
+    }
+
+    /* 5 MB limit */
+    if (file.size > 5 * 1024 * 1024) {
+      UI.showToast("File is too large. Maximum size is 5 MB.", "error");
+      return;
+    }
+
+    state.selectedFile = file;
+
+    /* Show the file preview card */
+    previewName.textContent = file.name;
+    previewSize.textContent = UI.formatFileSize(file.size);
+    filePreview.classList.remove("hidden");
+    uploadBtn.disabled = false;
+  }
+
+  fileRemove.addEventListener("click", () => {
+    state.selectedFile = null;
+    fileInput.value    = "";
+    filePreview.classList.add("hidden");
+    uploadBtn.disabled = true;
+  });
+
+  uploadBtn.addEventListener("click", () => uploadResume());
+
+  async function uploadResume() {
+    if (!state.selectedFile) return;
+
+    UI.setButtonLoading(uploadBtn, true, "Uploading...");
+    uploadProgress.classList.remove("hidden");
+
+    /* Simulate incremental progress (real XHR progress needs XMLHttpRequest,
+       fetch() does not expose upload progress — we fake it for UX) */
+    let pct = 0;
+    const fakeProgress = setInterval(() => {
+      pct = Math.min(pct + Math.random() * 15, 90);
+      progressBar.style.width = pct + "%";
+      uploadPct.textContent   = Math.round(pct) + "%";
+    }, 200);
+
+    try {
+      const formData = new FormData();
+      formData.append("resume", state.selectedFile);
+
+      const res = await ApiClient.postForm("/resume/upload", formData);
+
+      /* Upload done — jump progress to 100 % */
+      clearInterval(fakeProgress);
+      progressBar.style.width = "100%";
+      uploadPct.textContent   = "100%";
+
+      state.uploadedId   = res.data.candidate.id;
+      state.uploadedName = res.data.candidate.originalFileName;
+      state.uploadedSize = res.data.candidate.fileSize;
+
+      UI.showToast("Resume uploaded successfully.", "success");
+
+      /* Short delay so the user sees 100% before moving on */
+      setTimeout(() => goToStage(2), 600);
+
+    } catch (err) {
+      clearInterval(fakeProgress);
+      UI.showToast(err.message || "Upload failed. Please try again.", "error");
+      UI.setButtonLoading(uploadBtn, false);
+      uploadProgress.classList.add("hidden");
+      progressBar.style.width = "0%";
+    }
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     STAGE 2 — Job description selection
+  ═══════════════════════════════════════════════════════ */
+
+  function switchTab(tab) {
+    state.activeJdTab = tab;
+    state.selectedJdId = null;
+
+    document.getElementById("tabPaste").classList.toggle("active",  tab === "paste");
+    document.getElementById("tabSelect").classList.toggle("active", tab === "select");
+    document.getElementById("panePaste").classList.toggle("hidden", tab !== "paste");
+    document.getElementById("paneSelect").classList.toggle("hidden", tab !== "select");
+
+    /* Load existing JDs the first time the select tab is opened */
+    if (tab === "select") loadExistingJds();
+  }
+
+  async function loadExistingJds() {
+    const container = document.getElementById("jdList");
+    try {
+      const res = await ApiClient.get("/job");
+      const jds = res.data.jobDescriptions;
+
+      if (!jds || !jds.length) {
+        container.innerHTML = `
+          <div class="empty-state" style="padding:var(--space-6) 0;">
+            <div class="empty-state-icon">💼</div>
+            <p>No saved job descriptions yet.</p>
+            <button class="btn btn-secondary btn-sm" style="margin-top:var(--space-3);"
+                    onclick="switchTab('paste')">Paste one instead</button>
+          </div>`;
+        return;
+      }
+
+      container.innerHTML = jds.map(jd => `
+        <div class="jd-select-item" id="jdItem_${jd._id}"
+             onclick="selectJd('${jd._id}', this)"
+             style="padding:var(--space-3) var(--space-4); border:1px solid var(--color-border-light);
+                    border-radius:var(--radius-md); cursor:pointer; transition:all var(--transition-fast);">
+          <div style="font-weight:var(--font-weight-medium); font-size:var(--font-size-sm);">
+            ${UI.escapeHtml(jd.title)}
+          </div>
+          <div style="font-size:var(--font-size-xs); color:var(--color-text-muted); margin-top:2px;">
+            ${jd.company ? UI.escapeHtml(jd.company) + " · " : ""}
+            ${UI.formatDate(jd.createdAt)}
+          </div>
+        </div>`).join("");
+
+    } catch (err) {
+      container.innerHTML = `<p class="text-muted" style="font-size:var(--font-size-sm);">
+        Could not load job descriptions.</p>`;
+    }
+  }
+
+  function selectJd(jdId, el) {
+    /* Deselect previously selected item */
+    document.querySelectorAll(".jd-select-item").forEach(item => {
+      item.style.borderColor    = "var(--color-border-light)";
+      item.style.backgroundColor = "";
+    });
+
+    /* Highlight newly selected item */
+    el.style.borderColor    = "var(--color-primary)";
+    el.style.backgroundColor = "var(--color-primary-light)";
+    state.selectedJdId = jdId;
+  }
+
+  runMatchBtn.addEventListener("click", () => runAnalysis());
+
+  async function runAnalysis() {
+    /* Validate JD input before sending */
+    if (state.activeJdTab === "paste") {
+      const title = document.getElementById("jdTitle").value.trim();
+      const text  = document.getElementById("jdText").value.trim();
+
+      if (!title) {
+        UI.showToast("Please enter a job title.", "error");
+        return;
+      }
+      if (text.length < 50) {
+        UI.showToast("Job description must be at least 50 characters.", "error");
+        return;
+      }
+
+      UI.setButtonLoading(runMatchBtn, true, "Saving JD...");
+
+      try {
+        /* Save the JD first, then match */
+        const jdRes = await ApiClient.post("/job", {
+          title,
+          description: text,
+          source: "pasted",
+        });
+        state.selectedJdId = jdRes.data.jobDescription.id;
+      } catch (err) {
+        UI.showToast(err.message || "Failed to save job description.", "error");
+        UI.setButtonLoading(runMatchBtn, false);
+        return;
+      }
+    } else {
+      /* Select-existing tab */
+      if (!state.selectedJdId) {
+        UI.showToast("Please select a job description.", "error");
+        return;
+      }
+      UI.setButtonLoading(runMatchBtn, true, "Starting analysis...");
+    }
+
+    try {
+      /* Kick off matching — this triggers the full AI pipeline in the background */
+      await ApiClient.post("/match/single", {
+        candidateId:      state.uploadedId,
+        jobDescriptionId: state.selectedJdId,
+      });
+
+      goToStage(3);
+      startPolling();
+
+    } catch (err) {
+      UI.showToast(err.message || "Failed to start analysis.", "error");
+      UI.setButtonLoading(runMatchBtn, false);
+    }
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     STAGE 3 — Status polling
+  ═══════════════════════════════════════════════════════ */
+
+  /*
+   * How polling works:
+   * The AI pipeline runs as a background process (Python child_process).
+   * We poll GET /api/resume/:id every 3 seconds and read candidate.status.
+   * We animate the pipeline stages to give visual feedback while waiting.
+   * Once status is "matched" or "error" we stop polling and show the result.
+   */
+
+  /* Ordered pipeline stages for the animated status card */
+  const PIPELINE_STAGES = [
+    { id: "stageParse",     iconId: "parseIcon",     label: "parsing"    },
+    { id: "stageNlp",       iconId: "nlpIcon",       label: "nlp"        },
+    { id: "stageEmbed",     iconId: "embedIcon",     label: "embedding"  },
+    { id: "stageMatch",     iconId: "matchIcon",     label: "matching"   },
+    { id: "stageQuestions", iconId: "questionsIcon", label: "questions"  },
+  ];
+
+  let animatedStageIndex = 0;
+  let stageAnimTimer     = null;
+
+  function startPipelineAnimation() {
+    /* Cycle through stages every 4 seconds to simulate progress.
+       The real status only has "processing" or "matched" — we fake
+       the intermediate steps for a better user experience. */
+    animatedStageIndex = 0;
+    advancePipelineStage();
+
+    stageAnimTimer = setInterval(() => {
+      if (animatedStageIndex < PIPELINE_STAGES.length - 1) {
+        advancePipelineStage();
+      }
+    }, 4000);
+  }
+
+  function advancePipelineStage() {
+    PIPELINE_STAGES.forEach((s, idx) => {
+      const iconEl = document.getElementById(s.iconId);
+      const rowEl  = document.getElementById(s.id);
+
+      if (idx < animatedStageIndex) {
+        /* Completed stages */
+        iconEl.textContent  = "✓";
+        iconEl.className    = "status-stage-icon stage-done";
+      } else if (idx === animatedStageIndex) {
+        /* Currently running stage */
+        iconEl.innerHTML    = '<span class="spinner" style="width:14px;height:14px;border-width:2px;"></span>';
+        iconEl.className    = "status-stage-icon stage-running";
+      } else {
+        /* Pending stages */
+        iconEl.textContent  = "⏳";
+        iconEl.className    = "status-stage-icon stage-pending";
+      }
+    });
+
+    animatedStageIndex++;
+  }
+
+  function stopPipelineAnimation() {
+    if (stageAnimTimer) { clearInterval(stageAnimTimer); stageAnimTimer = null; }
+  }
+
+  function markAllStagesDone() {
+    PIPELINE_STAGES.forEach(s => {
+      const iconEl = document.getElementById(s.iconId);
+      iconEl.textContent = "✓";
+      iconEl.className   = "status-stage-icon stage-done";
+    });
+  }
+
+  function markAllStagesError() {
+    PIPELINE_STAGES.forEach((s, idx) => {
+      const iconEl = document.getElementById(s.iconId);
+      if (idx < animatedStageIndex) {
+        iconEl.textContent = "✓";
+        iconEl.className   = "status-stage-icon stage-done";
+      } else if (idx === animatedStageIndex) {
+        iconEl.textContent = "✕";
+        iconEl.className   = "status-stage-icon stage-error";
+      }
+    });
+  }
+
+  function startPolling() {
+    startPipelineAnimation();
+    state.pollCount = 0;
+
+    state.pollTimer = setInterval(async () => {
+      state.pollCount++;
+
+      /* Safety: stop after 40 polls (2 minutes at 3s interval) */
+      if (state.pollCount > 40) {
+        stopPolling();
+        showAnalysisError("Analysis timed out. Please try again.");
+        return;
+      }
+
+      try {
+        const res = await ApiClient.get(`/resume/${state.uploadedId}`);
+        const { status, errorMessage } = res.data.candidate;
+
+        if (status === "matched" || status === "analyzed") {
+          stopPolling();
+          stopPipelineAnimation();
+          markAllStagesDone();
+          showAnalysisSuccess(res.data.candidate);
+        } else if (status === "error") {
+          stopPolling();
+          stopPipelineAnimation();
+          markAllStagesError();
+          showAnalysisError(errorMessage || "AI analysis failed.");
+        }
+        /* Still "processing" or "uploaded" — keep polling */
+
+      } catch (err) {
+        /* Network blip — don't stop polling, just log */
+        console.warn("Poll failed:", err.message);
+      }
+    }, 3000);
+  }
+
+  function stopPolling() {
+    if (state.pollTimer) { clearInterval(state.pollTimer); state.pollTimer = null; }
+  }
+
+  function showAnalysisSuccess(candidate) {
+    const score   = candidate.matchScore?.weightedFinalScore;
+    const matched = candidate.matchScore?.matchedSkills || [];
+    const missing = candidate.matchScore?.missingSkills || [];
+
+    document.getElementById("resultContent").innerHTML = `
+      <div style="display:flex; align-items:center; gap:var(--space-4); margin-bottom:var(--space-4);">
+        <div class="score-circle ${UI.scoreToClass(score || 0)}" style="width:64px; height:64px; font-size:1rem;">
+          ${score != null ? score.toFixed(0) + "%" : "N/A"}
+        </div>
+        <div>
+          <div style="font-weight:var(--font-weight-semibold);">Analysis complete</div>
+          <div style="font-size:var(--font-size-sm); color:var(--color-text-secondary); margin-top:2px;">
+            ${matched.length} skills matched · ${missing.length} skills missing
+          </div>
+        </div>
+      </div>`;
+
+    document.getElementById("viewCandidateBtn").href = `/candidate/${state.uploadedId}`;
+    document.getElementById("analysisResult").classList.remove("hidden");
+    UI.showToast("Analysis complete!", "success");
+  }
+
+  function showAnalysisError(message) {
+    document.getElementById("errorMessage").textContent = message;
+    document.getElementById("analysisError").classList.remove("hidden");
+    UI.showToast("Analysis failed. Please try again.", "error");
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     Stage navigation helpers
+  ═══════════════════════════════════════════════════════ */
+
+  function goToStage(n) {
+    /* Hide all stages */
+    document.getElementById("stage1").classList.add("hidden");
+    document.getElementById("stage2").classList.add("hidden");
+    document.getElementById("stage3").classList.add("hidden");
+
+    /* Show target stage */
+    document.getElementById(`stage${n}`).classList.remove("hidden");
+
+    /* Update step indicator */
+    [1, 2, 3].forEach(i => {
+      const stepEl = document.getElementById(`step${i}`);
+      stepEl.classList.remove("active", "completed");
+      if (i < n)      stepEl.classList.add("completed");
+      else if (i === n) stepEl.classList.add("active");
+    });
+
+    /* Swap the checkmark into completed step numbers */
+    [1, 2, 3].forEach(i => {
+      const numEl = document.getElementById(`stepNum${i}`);
+      numEl.textContent = i < n ? "✓" : String(i);
+    });
+
+    /* Populate stage 2 file summary */
+    if (n === 2 && state.uploadedName) {
+      document.getElementById("stage2FileName").textContent =
+        UI.escapeHtml(state.uploadedName);
+      document.getElementById("stage2FileSize").textContent =
+        UI.formatFileSize(state.uploadedSize || 0);
+    }
+  }
+
+  /* Clean up polling timer if the user navigates away */
+  window.addEventListener("beforeunload", () => {
+    stopPolling();
+    stopPipelineAnimation();
+  });
+</script>
+</body>
+</html>
