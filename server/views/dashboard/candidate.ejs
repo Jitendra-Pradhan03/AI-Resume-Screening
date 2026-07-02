@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<!--
+  server/views/dashboard/candidate.ejs
+
+  Why this file exists: The full candidate report — shows every piece of
+  information the AI pipeline produced for one candidate in a single,
+  well-organised page.
+
+  How it connects:
+    - Rendered by GET /candidate/:id in pageRoutes.js
+    - candidateId is injected by EJS from the route parameter so the page
+      knows which candidate to load without parsing the URL client-side
+    - On load, calls GET /api/resume/:id (Step 9 enhanced endpoint) which
+      returns parsedData, matchScore, interviewQuestions, and readiness
+    - If questions are missing, calls POST /api/questions/generate inline
+    - Recruiter notes auto-save via PATCH /api/resume/:id/notes
+
+  Sections rendered:
+    Left column  — profile card, score circle, score breakdown bars, quick info
+    Right column — skills analysis, experience timeline, education timeline,
+                   projects, certifications, interview questions (tabbed),
+                   recruiter notes
+-->
+<html lang="en">
+<head>
+  <%- include('../partials/head') %>
+  <link rel="stylesheet" href="/css/layout.css" />
+  <link rel="stylesheet" href="/css/candidate.css" />
+</head>
+<body>
+<div class="app-shell">
+
+  <%- include('../partials/sidebar', { activePage: 'candidates' }) %>
+
+  <main class="main-content">
+
+    <!-- Page header with back link and action buttons -->
+    <div class="page-header">
+      <div>
+        <a href="/dashboard"
+           style="font-size:var(--font-size-sm); color:var(--color-text-muted);
+                  display:inline-flex; align-items:center; gap:var(--space-1);
+                  margin-bottom:var(--space-3);">
+          ← Back to Dashboard
+        </a>
+        <h1 id="pageTitle">Candidate Report</h1>
+        <p class="text-secondary" id="pageSubtitle">Loading...</p>
+      </div>
+      <div class="candidate-actions">
+        <button class="btn btn-secondary" id="regenerateQuestionsBtn">
+          ↻ Regenerate Questions
+        </button>
+        <a id="downloadResumeBtn" href="#" target="_blank"
+           class="btn btn-secondary">
+          ↓ View PDF
+        </a>
+        <button class="btn btn-danger btn-sm" id="deleteBtn">
+          Delete
+        </button>
+      </div>
+    </div>
+
+    <!-- Full loading skeleton shown while data is fetched -->
+    <div id="loadingSkeleton">
+      <div class="candidate-layout">
+        <div style="display:flex; flex-direction:column; gap:var(--space-4);">
+          <div class="card" style="height:220px;">
+            <div class="skeleton" style="height:100%;"></div>
+          </div>
+          <div class="card" style="height:200px;">
+            <div class="skeleton" style="height:100%;"></div>
+          </div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:var(--space-4);">
+          <div class="card" style="height:160px;">
+            <div class="skeleton" style="height:100%;"></div>
+          </div>
+          <div class="card" style="height:300px;">
+            <div class="skeleton" style="height:100%;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main content — hidden until data loads -->
+    <div id="candidateContent" class="hidden">
+      <div class="candidate-layout">
+
+        <!-- ══ LEFT COLUMN ══ -->
+        <div class="candidate-profile">
+
+          <!-- Profile card -->
+          <div class="card profile-card">
+            <div class="profile-avatar" id="profileAvatar">?</div>
+            <div class="profile-name"  id="profileName">—</div>
+            <div class="profile-email" id="profileEmail">—</div>
+            <div id="profileLinks" class="profile-links"></div>
+          </div>
+
+          <!-- Match score card -->
+          <div class="card score-summary">
+            <div class="score-main" id="scoreCircle">
+              <div class="score-main-value" id="scoreValue">—</div>
+              <div class="score-main-label">match score</div>
+            </div>
+
+            <div style="font-size:var(--font-size-xs); color:var(--color-text-muted);
+                        margin-bottom:var(--space-4);" id="scoreJobTitle"></div>
+
+            <div class="score-breakdown" id="scoreBreakdown">
+              <!-- Populated by renderScoreBreakdown() -->
+            </div>
+          </div>
+
+          <!-- Quick info card (phone, experience, education level) -->
+          <div class="card quick-info" id="quickInfo"></div>
+
+          <!-- Status + rank card -->
+          <div class="card" style="padding:var(--space-4) var(--space-5);">
+            <div style="display:flex; justify-content:space-between;
+                        align-items:center; font-size:var(--font-size-sm);">
+              <span class="text-secondary">Status</span>
+              <span id="candidateStatus"></span>
+            </div>
+            <div style="display:flex; justify-content:space-between;
+                        align-items:center; font-size:var(--font-size-sm);
+                        margin-top:var(--space-3);">
+              <span class="text-secondary">Rank</span>
+              <span id="candidateRank" style="font-weight:var(--font-weight-semibold);">—</span>
+            </div>
+            <div style="display:flex; justify-content:space-between;
+                        align-items:center; font-size:var(--font-size-sm);
+                        margin-top:var(--space-3);">
+              <span class="text-secondary">Uploaded</span>
+              <span id="candidateDate" style="color:var(--color-text-muted);">—</span>
+            </div>
+          </div>
+
+        </div><!-- /left column -->
+
+        <!-- ══ RIGHT COLUMN ══ -->
+        <div class="candidate-report">
+
+          <!-- Skills analysis -->
+          <div class="card report-section">
+            <div class="report-section-title">Skills Analysis</div>
+
+            <div style="margin-bottom:var(--space-5);">
+              <div style="font-size:var(--font-size-xs); font-weight:var(--font-weight-semibold);
+                          color:var(--color-text-muted); text-transform:uppercase;
+                          letter-spacing:0.05em; margin-bottom:var(--space-3);">
+                All skills on resume
+              </div>
+              <div class="skill-grid" id="allSkills"></div>
+            </div>
+
+            <div style="margin-bottom:var(--space-5);">
+              <div style="font-size:var(--font-size-xs); font-weight:var(--font-weight-semibold);
+                          color:var(--color-success); text-transform:uppercase;
+                          letter-spacing:0.05em; margin-bottom:var(--space-3);">
+                ✓ Matched with job
+              </div>
+              <div class="skill-grid" id="matchedSkills"></div>
+            </div>
+
+            <div>
+              <div style="font-size:var(--font-size-xs); font-weight:var(--font-weight-semibold);
+                          color:var(--color-danger); text-transform:uppercase;
+                          letter-spacing:0.05em; margin-bottom:var(--space-3);">
+                ✕ Missing from resume
+              </div>
+              <div class="skill-grid" id="missingSkills"></div>
+            </div>
+          </div>
+
+          <!-- Work experience -->
+          <div class="card report-section" id="experienceSection">
+            <div class="report-section-title">Work Experience</div>
+            <div class="timeline" id="experienceList"></div>
+          </div>
+
+          <!-- Education -->
+          <div class="card report-section" id="educationSection">
+            <div class="report-section-title">Education</div>
+            <div class="timeline" id="educationList"></div>
+          </div>
+
+          <!-- Projects -->
+          <div class="card report-section" id="projectsSection">
+            <div class="report-section-title">Projects</div>
+            <div id="projectsList"></div>
+          </div>
+
+          <!-- Certifications -->
+          <div class="card report-section" id="certsSection">
+            <div class="report-section-title">Certifications</div>
+            <div class="skill-grid" id="certsList"></div>
+          </div>
+
+          <!-- Interview questions -->
+          <div class="card report-section" id="questionsSection">
+            <div class="report-section-title">Interview Questions</div>
+
+            <div id="questionsLoading" style="text-align:center; padding:var(--space-6);">
+              <span class="spinner spinner-dark"></span>
+              <p style="font-size:var(--font-size-sm); color:var(--color-text-muted);
+                        margin-top:var(--space-3);">Generating questions...</p>
+            </div>
+
+            <div id="questionsReady" class="hidden">
+              <!-- Category tabs -->
+              <div class="question-tabs" id="questionTabs"></div>
+              <!-- Questions for active tab -->
+              <div id="questionsList"></div>
+            </div>
+
+            <div id="questionsEmpty" class="hidden">
+              <div class="empty-state">
+                <div class="empty-state-icon">❓</div>
+                <p>No questions generated yet.</p>
+                <button class="btn btn-primary btn-sm" style="margin-top:var(--space-3);"
+                        onclick="generateQuestions()">Generate Now</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Recruiter notes -->
+          <div class="card report-section">
+            <div class="report-section-title">Recruiter Notes</div>
+            <textarea class="notes-area" id="notesArea"
+                      placeholder="Add your notes about this candidate..."></textarea>
+            <div style="display:flex; justify-content:flex-end; margin-top:var(--space-3);">
+              <button class="btn btn-secondary btn-sm" id="saveNotesBtn">
+                Save Notes
+              </button>
+            </div>
+          </div>
+
+        </div><!-- /right column -->
+      </div>
+    </div><!-- /candidateContent -->
+
+  </main>
+</div>
+
+<%- include('../partials/footer', { includesSidebar: true }) %>
+
+<script>
+  /* ── Auth guard ── */
+  AuthState.requireAuth();
+
+  /*
+   * candidateId is injected by EJS from the :id route parameter.
+   * This means the page knows which candidate to load without having
+   * to parse window.location.pathname in JavaScript.
+   */
+  const CANDIDATE_ID = "<%= candidateId %>";
+
+  /* Holds the full API response so tab switching doesn't re-fetch */
+  let candidateData = null;
+  /* Currently active question category tab */
+  let activeTab = "all";
+  let allQuestions = [];
+  let questionsByCategory = {};
+  /* ══════════════════════════════════════════════════════
+     LOAD CANDIDATE DATA
+  ══════════════════════════════════════════════════════ */
+
+  async function loadCandidate() {
+    try {
+      const res = await ApiClient.get(`/resume/${CANDIDATE_ID}`);
+      candidateData = res.data;
+
+      renderPage(candidateData);
+
+      /* Show the content, hide the skeleton */
+      document.getElementById("loadingSkeleton").classList.add("hidden");
+      document.getElementById("candidateContent").classList.remove("hidden");
+
+      /* Handle interview questions separately — they may need generation */
+      handleQuestions(candidateData);
+
+    } catch (err) {
+      UI.showToast(err.message || "Failed to load candidate data.", "error");
+      document.getElementById("loadingSkeleton").innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">⚠️</div>
+          <p>Could not load this candidate. They may have been deleted.</p>
+          <a href="/dashboard" class="btn btn-primary btn-sm"
+             style="margin-top:var(--space-3);">Return to Dashboard</a>
+        </div>`;
+    }
+  }
+
+  /* ══════════════════════════════════════════════════════
+     RENDER — orchestrates all sections
+  ══════════════════════════════════════════════════════ */
+
+  function renderPage(data) {
+    const { candidate, fileUrl, readiness } = data;
+    const info  = candidate.resumeInfo  || {};
+    const score = candidate.matchScore  || {};
+    const jd    = candidate.jobDescription;
+
+    renderProfile(info, candidate);
+    renderScoreSummary(score, jd);
+    renderQuickInfo(info, candidate);
+    renderSkills(info, score);
+    renderExperience(info.experience || []);
+    renderEducation(info.education   || []);
+    renderProjects(info.projects     || []);
+    renderCertifications(info.certifications || []);
+    renderMeta(candidate, fileUrl);
+  }
+
+  /* ── Profile card ── */
+  function renderProfile(info, candidate) {
+    const name = info.name || candidate.originalFileName;
+    document.getElementById("pageTitle").textContent    = name;
+    document.getElementById("pageSubtitle").textContent =
+      info.email || "Resume candidate";
+
+    document.getElementById("profileAvatar").textContent =
+      (name || "?").charAt(0).toUpperCase();
+    document.getElementById("profileName").textContent  = name;
+    document.getElementById("profileEmail").textContent = info.email || "—";
+
+    const linksHtml = [
+      info.linkedin ? `<a href="${UI.escapeHtml(info.linkedin)}" target="_blank"
+                          class="profile-link">🔗 LinkedIn</a>` : "",
+      info.github   ? `<a href="${UI.escapeHtml(info.github)}" target="_blank"
+                          class="profile-link">⌥ GitHub</a>`   : "",
+      info.phone    ? `<span class="profile-link">📞 ${UI.escapeHtml(info.phone)}</span>` : "",
+    ].filter(Boolean).join("");
+
+    document.getElementById("profileLinks").innerHTML = linksHtml ||
+      `<span class="text-muted" style="font-size:var(--font-size-xs);">No links found</span>`;
+  }
+
+  /* ── Score circle + breakdown bars ── */
+  function renderScoreSummary(score, jd) {
+    const final = score.weightedFinalScore;
+    const cls   = final != null ? UI.scoreToClass(final) : "";
+
+    const circle = document.getElementById("scoreCircle");
+    circle.className = `score-main ${cls}`;
+    document.getElementById("scoreValue").textContent =
+      final != null ? final.toFixed(0) + "%" : "N/A";
+
+    document.getElementById("scoreJobTitle").textContent =
+      jd ? `vs. ${jd.title}` : "No job matched yet";
+
+    if (final == null) {
+      document.getElementById("scoreBreakdown").innerHTML =
+        `<p class="text-muted" style="font-size:var(--font-size-xs); text-align:center;">
+           Run a match to see score breakdown.</p>`;
+      return;
+    }
+
+    const bars = [
+      { label: "Skills match",     value: score.skillScore,      weight: "40%" },
+      { label: "Semantic match",   value: score.overallScore,    weight: "30%" },
+      { label: "Experience",       value: score.experienceScore, weight: "20%" },
+      { label: "Education",        value: score.educationScore,  weight: "10%" },
+    ];
+
+    document.getElementById("scoreBreakdown").innerHTML = bars.map(b => {
+      const v   = b.value != null ? b.value.toFixed(0) : "—";
+      const cls = b.value != null ? UI.scoreToClass(b.value) : "";
+      const pct = b.value != null ? b.value : 0;
+      return `
+        <div class="score-row">
+          <div class="score-row-header">
+            <span class="score-row-label">${b.label}
+              <span style="color:var(--color-text-muted);">(${b.weight})</span>
+            </span>
+            <span class="score-row-value" style="color:${UI.scoreToColor(b.value || 0)}">
+              ${v}${b.value != null ? "%" : ""}
+            </span>
+          </div>
+          <div class="score-bar">
+            <div class="score-bar-fill ${cls}" style="width:${pct}%"></div>
+          </div>
+        </div>`;
+    }).join("");
+  }
+
+  /* ── Quick info list ── */
+  function renderQuickInfo(info, candidate) {
+    const topEdu = info.education && info.education[0];
+    const items = [
+      info.totalExperienceYears != null && {
+        icon: "💼",
+        label: "Experience",
+        value: info.totalExperienceYears === 0
+          ? "Fresher / Entry level"
+          : `${info.totalExperienceYears} year${info.totalExperienceYears !== 1 ? "s" : ""}`,
+      },
+      topEdu && {
+        icon: "🎓",
+        label: "Education",
+        value: [topEdu.degree, topEdu.field].filter(Boolean).join(" in ") ||
+               topEdu.institution || "—",
+      },
+      candidate.fileSize && {
+        icon: "📄",
+        label: "File size",
+        value: UI.formatFileSize(candidate.fileSize),
+      },
+    ].filter(Boolean);
+
+    document.getElementById("quickInfo").innerHTML = items.map(i => `
+      <div class="quick-info-item">
+        <span class="quick-info-icon">${i.icon}</span>
+        <div>
+          <div class="quick-info-label">${i.label}</div>
+          <div class="quick-info-value">${UI.escapeHtml(String(i.value))}</div>
+        </div>
+      </div>`).join("");
+  }
+
+  /* ── Skills sections ── */
+  function renderSkills(info, score) {
+    const all     = info.skills           || [];
+    const matched = score.matchedSkills   || [];
+    const missing = score.missingSkills   || [];
+
+    const pill = (text, cls) =>
+      `<span class="skill-pill ${cls}">${UI.escapeHtml(text)}</span>`;
+
+    /* All skills on resume — highlight matched ones in green */
+    const matchedSet = new Set(matched.map(s => s.toLowerCase()));
+    document.getElementById("allSkills").innerHTML = all.length
+      ? all.map(s => pill(s, matchedSet.has(s.toLowerCase()) ? "skill-matched" : "skill-neutral")).join("")
+      : `<span class="text-muted" style="font-size:var(--font-size-sm);">No skills extracted</span>`;
+
+    document.getElementById("matchedSkills").innerHTML = matched.length
+      ? matched.map(s => pill(s, "skill-matched")).join("")
+      : `<span class="text-muted" style="font-size:var(--font-size-sm);">
+           Run a match to see matched skills.</span>`;
+
+    document.getElementById("missingSkills").innerHTML = missing.length
+      ? missing.map(s => pill(s, "skill-missing")).join("")
+      : `<span class="text-muted" style="font-size:var(--font-size-sm);">
+           No missing skills — great match!</span>`;
+  }
+
+  /* ── Experience timeline ── */
+  function renderExperience(experience) {
+    const section = document.getElementById("experienceSection");
+
+    if (!experience.length) {
+      section.classList.add("hidden");
+      return;
+    }
+
+    document.getElementById("experienceList").innerHTML = experience.map(e => `
+      <div class="timeline-item">
+        <div class="timeline-dot"></div>
+        <div class="timeline-content">
+          <div class="timeline-title">${UI.escapeHtml(e.title || "—")}</div>
+          <div class="timeline-sub">
+            ${e.company  ? UI.escapeHtml(e.company)  + " " : ""}
+            ${e.duration ? "· " + UI.escapeHtml(e.duration) : ""}
+          </div>
+          ${e.description
+            ? `<div class="timeline-desc">${UI.escapeHtml(e.description)}</div>`
+            : ""}
+        </div>
+      </div>`).join("");
+  }
+
+  /* ── Education timeline ── */
+  function renderEducation(education) {
+    const section = document.getElementById("educationSection");
+
+    if (!education.length) {
+      section.classList.add("hidden");
+      return;
+    }
+
+    document.getElementById("educationList").innerHTML = education.map(e => `
+      <div class="timeline-item">
+        <div class="timeline-dot"></div>
+        <div class="timeline-content">
+          <div class="timeline-title">
+            ${UI.escapeHtml(e.degree || "")}
+            ${e.field ? " in " + UI.escapeHtml(e.field) : ""}
+          </div>
+          <div class="timeline-sub">
+            ${e.institution ? UI.escapeHtml(e.institution) : ""}
+            ${e.year        ? " · " + UI.escapeHtml(e.year) : ""}
+          </div>
+        </div>
+      </div>`).join("");
+  }
+
+  /* ── Projects ── */
+  function renderProjects(projects) {
+    const section = document.getElementById("projectsSection");
+
+    if (!projects.length) {
+      section.classList.add("hidden");
+      return;
+    }
+
+    document.getElementById("projectsList").innerHTML = projects.map(p => `
+      <div style="padding:var(--space-4); border:1px solid var(--color-border-light);
+                  border-radius:var(--radius-md); margin-bottom:var(--space-3);">
+        <div style="font-weight:var(--font-weight-semibold);
+                    font-size:var(--font-size-sm); margin-bottom:var(--space-2);">
+          ${UI.escapeHtml(p.name || "Unnamed project")}
+        </div>
+        ${p.description
+          ? `<p style="font-size:var(--font-size-sm); color:var(--color-text-secondary);
+                       margin-bottom:var(--space-2);">
+               ${UI.escapeHtml(p.description)}</p>`
+          : ""}
+        ${p.technologies && p.technologies.length
+          ? `<div class="skill-grid">
+               ${p.technologies.map(t =>
+                 `<span class="skill-pill skill-neutral">${UI.escapeHtml(t)}</span>`
+               ).join("")}
+             </div>`
+          : ""}
+      </div>`).join("");
+  }
+
+  /* ── Certifications ── */
+  function renderCertifications(certs) {
+    const section = document.getElementById("certsSection");
+
+    if (!certs.length) {
+      section.classList.add("hidden");
+      return;
+    }
+
+    document.getElementById("certsList").innerHTML = certs
+      .map(c => `<span class="skill-pill skill-neutral">${UI.escapeHtml(c)}</span>`)
+      .join("");
+  }
+
+  /* ── Meta (status, rank, date, PDF link) ── */
+  function renderMeta(candidate, fileUrl) {
+    document.getElementById("candidateStatus").innerHTML =
+      UI.statusBadge(candidate.status);
+
+    document.getElementById("candidateRank").textContent =
+      candidate.rank != null ? `#${candidate.rank}` : "Unranked";
+
+    document.getElementById("candidateDate").textContent =
+      UI.formatDate(candidate.uploadedAt || candidate.createdAt);
+
+    if (fileUrl) {
+      document.getElementById("downloadResumeBtn").href = fileUrl;
+    }
+
+    if (candidate.recruiterNotes) {
+      document.getElementById("notesArea").value = candidate.recruiterNotes;
+    }
+  }
+
+  /* ══════════════════════════════════════════════════════
+     INTERVIEW QUESTIONS
+  ══════════════════════════════════════════════════════ */
+
+  async function handleQuestions(data) {
+    const questions = data.candidate.interviewQuestions;
+
+    if (questions && questions.length) {
+      /* Already generated — render immediately */
+      renderQuestions(questions, data.candidate.questionsByCategory);
+    } else if (data.readiness.isParsed) {
+      /* Resume is parsed but no questions yet — auto-generate */
+      await generateQuestions();
+    } else {
+      /* Resume not parsed yet — show empty state */
+      document.getElementById("questionsLoading").classList.add("hidden");
+      document.getElementById("questionsEmpty").classList.remove("hidden");
+    }
+  }
+
+  async function generateQuestions() {
+    document.getElementById("questionsLoading").classList.remove("hidden");
+    document.getElementById("questionsReady").classList.add("hidden");
+    document.getElementById("questionsEmpty").classList.add("hidden");
+
+    try {
+      const res = await ApiClient.post("/questions/generate", {
+        candidateId: CANDIDATE_ID,
+      });
+
+      const questions = res.data.questions;
+
+      /* Group questions by category for tabs */
+      const byCategory = questions.reduce((acc, q) => {
+        if (!acc[q.category]) acc[q.category] = [];
+        acc[q.category].push(q);
+        return acc;
+      }, {});
+
+      renderQuestions(questions, byCategory);
+
+    } catch (err) {
+      UI.showToast(err.message || "Failed to generate questions.", "error");
+      document.getElementById("questionsLoading").classList.add("hidden");
+      document.getElementById("questionsEmpty").classList.remove("hidden");
+    }
+  }
+
+  function renderQuestions(questions, byCategory) {
+    document.getElementById("questionsLoading").classList.add("hidden");
+    document.getElementById("questionsEmpty").classList.add("hidden");
+    document.getElementById("questionsReady").classList.remove("hidden");
+
+    /* Build tabs — "All" first, then one per category present */
+    const categoryLabels = {
+      all:        "All",
+      technical:  "Technical",
+      behavioral: "Behavioral",
+      experience: "Experience",
+      project:    "Projects",
+    };
+
+    const categories = ["all", ...Object.keys(byCategory || {})];
+    allQuestions = questions;
+    questionsByCategory = byCategory || {};
+
+    const tabsHtml = categories.map(cat => `
+      <button class="question-tab ${cat === activeTab ? "active" : ""}"
+            onclick="switchQuestionTab('${cat}')">
+        ${categoryLabels[cat] || cat}
+        <span style="font-size:var(--font-size-xs); color:var(--color-text-muted);
+                     margin-left:var(--space-1);">
+          (${cat === "all" ? questions.length : (byCategory[cat] || []).length})
+        </span>
+      </button>`).join("");
+
+    document.getElementById("questionTabs").innerHTML = tabsHtml;
+
+    /* Render the initial active tab */
+    renderQuestionList(
+      activeTab === "all" ? questions : (byCategory[activeTab] || [])
+    );
+  }
+
+  function switchQuestionTab(cat) {
+    activeTab = cat;
+
+  document.querySelectorAll(".question-tab").forEach(btn => {
+    btn.classList.toggle("active", btn.textContent.trim().startsWith(
+      { all: "All", technical: "Technical", behavioral: "Behavioral",
+        experience: "Experience", project: "Projects" }[cat] || cat
+    ));
+  });
+
+  renderQuestionList(
+    cat === "all"
+      ? allQuestions
+      : (questionsByCategory[cat] || [])
+  );
+  }
+
+  function renderQuestionList(questions) {
+    if (!questions.length) {
+      document.getElementById("questionsList").innerHTML = `
+        <div class="empty-state" style="padding:var(--space-6) 0;">
+          <p>No questions in this category.</p>
+        </div>`;
+      return;
+    }
+
+    document.getElementById("questionsList").innerHTML = questions.map(q => `
+      <div class="question-card">
+        <div class="question-text">${UI.escapeHtml(q.question)}</div>
+        <div class="question-meta">
+          <span class="difficulty-badge diff-${q.difficulty}">
+            ${q.difficulty.charAt(0).toUpperCase() + q.difficulty.slice(1)}
+          </span>
+          ${q.relatedSkill && q.relatedSkill !== "behavioral" &&
+            q.relatedSkill !== "experience" && q.relatedSkill !== "projects"
+            ? `<span class="skill-tag">${UI.escapeHtml(q.relatedSkill)}</span>`
+            : ""}
+        </div>
+      </div>`).join("");
+  }
+
+  /* ══════════════════════════════════════════════════════
+     RECRUITER NOTES AUTO-SAVE
+  ══════════════════════════════════════════════════════ */
+
+  document.getElementById("saveNotesBtn").addEventListener("click", async () => {
+    const btn   = document.getElementById("saveNotesBtn");
+    const notes = document.getElementById("notesArea").value;
+
+    UI.setButtonLoading(btn, true, "Saving...");
+
+    try {
+      await ApiClient.patch(`/resume/${CANDIDATE_ID}/notes`, {
+        recruiterNotes: notes,
+      });
+      UI.showToast("Notes saved.", "success");
+    } catch (err) {
+      UI.showToast(err.message || "Failed to save notes.", "error");
+    } finally {
+      UI.setButtonLoading(btn, false);
+    }
+  });
+
+  /* ══════════════════════════════════════════════════════
+     HEADER BUTTON ACTIONS
+  ══════════════════════════════════════════════════════ */
+
+  document.getElementById("regenerateQuestionsBtn").addEventListener("click", async () => {
+    const btn = document.getElementById("regenerateQuestionsBtn");
+
+    /* Clear existing questions from the UI first */
+    document.getElementById("questionsReady").classList.add("hidden");
+    document.getElementById("questionsEmpty").classList.add("hidden");
+
+    UI.setButtonLoading(btn, true, "Regenerating...");
+
+    /* Clear questions on the server then regenerate */
+    try {
+      await ApiClient.delete(`/questions/${CANDIDATE_ID}`);
+      await generateQuestions();
+      UI.showToast("Questions regenerated.", "success");
+    } catch (err) {
+      UI.showToast(err.message || "Failed to regenerate questions.", "error");
+    } finally {
+      UI.setButtonLoading(btn, false);
+    }
+  });
+
+  document.getElementById("deleteBtn").addEventListener("click", async () => {
+    if (!confirm("Delete this candidate and their resume? This cannot be undone.")) return;
+
+    try {
+      await ApiClient.delete(`/resume/${CANDIDATE_ID}`);
+      UI.showToast("Candidate deleted.", "success");
+      setTimeout(() => { window.location.href = "/dashboard"; }, 800);
+    } catch (err) {
+      UI.showToast(err.message || "Failed to delete candidate.", "error");
+    }
+  });
+
+  /* ══════════════════════════════════════════════════════
+     KICK OFF
+  ══════════════════════════════════════════════════════ */
+  loadCandidate();
+</script>
+</body>
+</html>

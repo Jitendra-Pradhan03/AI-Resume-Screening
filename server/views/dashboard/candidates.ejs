@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<!--
+  server/views/dashboard/candidates.ejs
+
+  Why this file exists: Gives recruiters a searchable, filterable list of
+  every resume they have ever uploaded — across all job descriptions.
+  This is different from rankings.ejs which shows candidates for one job.
+
+  How it connects:
+    - Rendered by GET /candidates in pageRoutes.js
+    - Calls GET /api/dashboard/search with query params for filtering
+    - Each row links to /candidate/:id
+-->
+<html lang="en">
+<head>
+  <%- include('../partials/head') %>
+  <link rel="stylesheet" href="/css/layout.css" />
+  <link rel="stylesheet" href="/css/rankings.css" />
+</head>
+<body>
+<div class="app-shell">
+
+  <%- include('../partials/sidebar', { activePage: 'candidates' }) %>
+
+  <main class="main-content">
+
+    <div class="page-header">
+      <div>
+        <h1>All Candidates</h1>
+        <p class="text-secondary">Every resume uploaded to your account</p>
+      </div>
+      <a href="/upload" class="btn btn-primary">+ Upload Resume</a>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="filter-bar" style="margin-bottom:var(--space-5);">
+      <input type="text" class="form-input" id="searchInput"
+             placeholder="Search by name, email, or skill..." />
+
+      <select class="form-select" id="statusFilter" style="width:auto;">
+        <option value="">All statuses</option>
+        <option value="uploaded">Uploaded</option>
+        <option value="processing">Processing</option>
+        <option value="analyzed">Analyzed</option>
+        <option value="matched">Matched</option>
+        <option value="error">Error</option>
+      </select>
+
+      <select class="form-select" id="minScoreFilter" style="width:auto;">
+        <option value="">All scores</option>
+        <option value="70">70%+ strong</option>
+        <option value="50">50%+ moderate</option>
+      </select>
+
+      <button class="btn btn-secondary btn-sm" onclick="loadCandidates()">
+        Search
+      </button>
+
+      <span id="resultCount"
+            style="font-size:var(--font-size-sm);
+                   color:var(--color-text-muted);
+                   margin-left:auto;"></span>
+    </div>
+
+    <!-- Results table -->
+    <div class="card" style="padding:0; overflow:hidden;">
+      <div id="tableContainer">
+        <div style="padding:var(--space-10); text-align:center;">
+          <span class="spinner spinner-dark spinner-lg"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pagination -->
+    <div id="pagination"
+         style="display:flex; justify-content:center; gap:var(--space-3);
+                margin-top:var(--space-5);"></div>
+
+  </main>
+</div>
+
+<%- include('../partials/footer', { includesSidebar: true }) %>
+
+<script>
+  AuthState.requireAuth();
+
+  let currentPage = 1;
+
+  /* ── Build query string from current filter values ── */
+  function buildQuery(page) {
+    const q        = document.getElementById("searchInput").value.trim();
+    const status   = document.getElementById("statusFilter").value;
+    const minScore = document.getElementById("minScoreFilter").value;
+
+    const params = new URLSearchParams();
+    if (q)        params.set("q",        q);
+    if (status)   params.set("status",   status);
+    if (minScore) params.set("minScore", minScore);
+    params.set("page",  page);
+    params.set("limit", "10");
+    return params.toString();
+  }
+
+  async function loadCandidates(page = 1) {
+    currentPage = page;
+
+    document.getElementById("tableContainer").innerHTML = `
+      <div style="padding:var(--space-10); text-align:center;">
+        <span class="spinner spinner-dark spinner-lg"></span>
+      </div>`;
+
+    try {
+      const res  = await ApiClient.get(`/dashboard/search?${buildQuery(page)}`);
+      const { candidates, pagination } = res.data;
+
+      renderTable(candidates);
+      renderPagination(pagination);
+
+      document.getElementById("resultCount").textContent =
+        `${pagination.totalResults} result${pagination.totalResults !== 1 ? "s" : ""}`;
+
+    } catch (err) {
+      UI.showToast(err.message || "Search failed.", "error");
+      document.getElementById("tableContainer").innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">⚠️</div>
+          <p>Could not load candidates.</p>
+        </div>`;
+    }
+  }
+
+  function renderTable(candidates) {
+    if (!candidates.length) {
+      document.getElementById("tableContainer").innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">👥</div>
+          <p>No candidates match your search.</p>
+        </div>`;
+      return;
+    }
+
+    const rowsHtml = candidates.map(c => {
+      const name  = c.parsedData?.name || c.originalFileName || "Unknown";
+      const email = c.parsedData?.email || "";
+      const score = c.matchScore?.weightedFinalScore;
+      const skills = (c.parsedData?.skills || []).slice(0, 3);
+
+      return `
+        <tr onclick="window.location.href='/candidate/${UI.escapeHtml(c._id)}'">
+          <td>
+            <div class="candidate-cell">
+              <div class="candidate-mini-avatar">
+                ${(name).charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <div class="candidate-cell-name">${UI.escapeHtml(name)}</div>
+                ${email
+                  ? `<div class="candidate-cell-email">${UI.escapeHtml(email)}</div>`
+                  : ""}
+              </div>
+            </div>
+          </td>
+          <td>
+            ${score != null
+              ? `<div class="inline-score">
+                   <div class="inline-score-bar">
+                     <div class="inline-score-fill ${UI.scoreToClass(score)}"
+                          style="width:${score}%"></div>
+                   </div>
+                   <div class="inline-score-value"
+                        style="color:${UI.scoreToColor(score)}">
+                     ${score.toFixed(0)}%
+                   </div>
+                 </div>`
+              : `<span class="text-muted" style="font-size:var(--font-size-sm);">
+                   Not matched</span>`}
+          </td>
+          <td>
+            <div style="display:flex; flex-wrap:wrap; gap:var(--space-1);">
+              ${skills.map(s =>
+                `<span class="mini-skill">${UI.escapeHtml(s)}</span>`
+              ).join("") || "—"}
+            </div>
+          </td>
+          <td>${UI.statusBadge(c.status)}</td>
+          <td>
+            ${c.jobDescription?.title
+              ? `<span style="font-size:var(--font-size-xs); color:var(--color-text-secondary);">
+                   ${UI.escapeHtml(c.jobDescription.title)}</span>`
+              : `<span class="text-muted" style="font-size:var(--font-size-xs);">None</span>`}
+          </td>
+          <td style="color:var(--color-text-muted);">
+            ${UI.formatRelativeTime(c.createdAt)}
+          </td>
+        </tr>`;
+    }).join("");
+
+    document.getElementById("tableContainer").innerHTML = `
+      <table class="rankings-table">
+        <thead>
+          <tr>
+            <th>Candidate</th>
+            <th style="min-width:160px;">Match Score</th>
+            <th>Top Skills</th>
+            <th>Status</th>
+            <th>Job</th>
+            <th>Uploaded</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>`;
+  }
+
+  function renderPagination(pagination) {
+    const container = document.getElementById("pagination");
+
+    if (pagination.totalPages <= 1) {
+      container.innerHTML = "";
+      return;
+    }
+
+    const buttons = [];
+
+    /* Previous button */
+    buttons.push(`
+      <button class="btn btn-secondary btn-sm"
+              ${!pagination.hasPrevPage ? "disabled" : ""}
+              onclick="loadCandidates(${currentPage - 1})">
+        ← Prev
+      </button>`);
+
+    /* Page number buttons — show at most 5 around current page */
+    const start = Math.max(1, currentPage - 2);
+    const end   = Math.min(pagination.totalPages, currentPage + 2);
+
+    for (let i = start; i <= end; i++) {
+      buttons.push(`
+        <button class="btn ${i === currentPage ? "btn-primary" : "btn-secondary"} btn-sm"
+                onclick="loadCandidates(${i})">
+          ${i}
+        </button>`);
+    }
+
+    /* Next button */
+    buttons.push(`
+      <button class="btn btn-secondary btn-sm"
+              ${!pagination.hasNextPage ? "disabled" : ""}
+              onclick="loadCandidates(${currentPage + 1})">
+        Next →
+      </button>`);
+
+    container.innerHTML = buttons.join("");
+  }
+
+  /* Trigger search on Enter key in the search box */
+  document.getElementById("searchInput").addEventListener("keydown", e => {
+    if (e.key === "Enter") loadCandidates(1);
+  });
+
+  /* Kick off with default (no filters) */
+  loadCandidates();
+</script>
+</body>
+</html>

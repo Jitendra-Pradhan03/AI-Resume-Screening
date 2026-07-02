@@ -53,5 +53,7 @@ router.get("/rankings/:jobId", (req, res) => {
 router.get("/jobs", (req, res) => {
   res.render("dashboard/jobs", { title: "Job Descriptions" });
 });
-
+router.get("/candidates", (req, res) => {
+  res.render("dashboard/candidates", { title: "All Candidates" });
+});
 module.exports = router;

@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<!--
+  server/views/dashboard/rankings.ejs
+
+  Why this file exists: Shows all candidates matched against one specific
+  job description, sorted by weighted final score. Lets recruiters compare
+  candidates side by side and navigate directly to any candidate report.
+
+  How it connects:
+    - Rendered by GET /rankings/:jobId in pageRoutes.js
+    - jobId is injected by EJS from the route parameter
+    - On load calls GET /api/match/rankings/:jobId (Step 7)
+      and GET /api/job/:id for the job header info
+    - Each row links to /candidate/:id (Step 13)
+-->
+<html lang="en">
+<head>
+  <%- include('../partials/head') %>
+  <link rel="stylesheet" href="/css/layout.css" />
+  <link rel="stylesheet" href="/css/rankings.css" />
+</head>
+<body>
+<div class="app-shell">
+
+  <%- include('../partials/sidebar', { activePage: 'dashboard' }) %>
+
+  <main class="main-content">
+
+    <!-- Page header -->
+    <div class="page-header">
+      <div>
+        <a href="/dashboard"
+           style="font-size:var(--font-size-sm); color:var(--color-text-muted);
+                  display:inline-flex; align-items:center; gap:var(--space-1);
+                  margin-bottom:var(--space-3);">
+          ← Back to Dashboard
+        </a>
+        <h1>Candidate Rankings</h1>
+        <p class="text-secondary" id="rankingSubtitle">Loading...</p>
+      </div>
+      <a href="/upload" class="btn btn-primary">+ Upload Another Resume</a>
+    </div>
+
+    <!-- Job header card -->
+    <div class="job-header-card" id="jobHeaderCard">
+      <div class="job-header-info">
+        <div class="skeleton" style="height:24px; width:300px; margin-bottom:var(--space-2);"></div>
+        <div class="skeleton" style="height:16px; width:180px;"></div>
+      </div>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="filter-bar">
+      <input type="text" class="form-input" id="searchInput"
+             placeholder="Filter by name or skill..." />
+      <select class="form-select" id="minScoreFilter"
+              style="width:auto;">
+        <option value="">All scores</option>
+        <option value="70">70%+ (strong)</option>
+        <option value="50">50%+ (moderate)</option>
+        <option value="30">30%+ (weak)</option>
+      </select>
+      <span id="resultCount"
+            style="font-size:var(--font-size-sm); color:var(--color-text-muted);
+                   margin-left:auto;"></span>
+    </div>
+
+    <!-- Rankings table card -->
+    <div class="card" style="padding:0; overflow:hidden;">
+      <div id="tableContainer">
+        <!-- Populated by renderRankings() -->
+        <div style="padding:var(--space-10); text-align:center;">
+          <span class="spinner spinner-dark spinner-lg"></span>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<%- include('../partials/footer', { includesSidebar: true }) %>
+
+<script>
+  AuthState.requireAuth();
+
+  /* jobId injected by EJS from the :jobId route parameter */
+  const JOB_ID = "<%= jobId %>";
+
+  /* Full unfiltered rankings kept in memory for client-side filtering */
+  let allCandidates = [];
+
+  /* ══════════════════════════════════════════════════════
+     LOAD DATA
+  ══════════════════════════════════════════════════════ */
+
+  async function loadRankings() {
+    try {
+      /* Run both requests in parallel */
+      const [rankingsRes, jobRes] = await Promise.all([
+        ApiClient.get(`/match/rankings/${JOB_ID}`),
+        ApiClient.get(`/job/${JOB_ID}`),
+      ]);
+
+      allCandidates = rankingsRes.data.candidates || [];
+      const job     = jobRes.data.jobDescription;
+
+      renderJobHeader(job, rankingsRes.data);
+      renderRankings(allCandidates);
+
+      document.getElementById("rankingSubtitle").textContent =
+        `${allCandidates.length} candidate${allCandidates.length !== 1 ? "s" : ""} matched`;
+
+    } catch (err) {
+      UI.showToast(err.message || "Failed to load rankings.", "error");
+      document.getElementById("tableContainer").innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">⚠️</div>
+          <p>Could not load rankings for this job.</p>
+        </div>`;
+    }
+  }
+
+  /* ── Job header card ── */
+  function renderJobHeader(job, rankingsData) {
+    const total   = rankingsData.totalCandidates || 0;
+    const scores  = allCandidates
+      .map(c => c.matchScore?.weightedFinalScore)
+      .filter(s => s != null);
+    const avgScore = scores.length
+      ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1)
+      : "—";
+    const topScore = scores.length ? Math.max(...scores).toFixed(1) : "—";
+
+    document.getElementById("jobHeaderCard").innerHTML = `
+      <div class="job-header-info">
+        <div class="job-header-title">${UI.escapeHtml(job.title)}</div>
+        ${job.company
+          ? `<div class="job-header-company">${UI.escapeHtml(job.company)}</div>`
+          : ""}
+      </div>
+      <div class="job-header-stats">
+        <div class="job-stat">
+          <div class="job-stat-value">${total}</div>
+          <div class="job-stat-label">candidates</div>
+        </div>
+        <div class="job-stat">
+          <div class="job-stat-value">${avgScore}${scores.length ? "%" : ""}</div>
+          <div class="job-stat-label">avg score</div>
+        </div>
+        <div class="job-stat">
+          <div class="job-stat-value">${topScore}${scores.length ? "%" : ""}</div>
+          <div class="job-stat-label">top score</div>
+        </div>
+      </div>`;
+  }
+
+  /* ── Rankings table ── */
+  function renderRankings(candidates) {
+    document.getElementById("resultCount").textContent =
+      `${candidates.length} result${candidates.length !== 1 ? "s" : ""}`;
+
+    if (!candidates.length) {
+      document.getElementById("tableContainer").innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">👥</div>
+          <p>No matched candidates yet for this job.</p>
+          <a href="/upload" class="btn btn-primary btn-sm"
+             style="margin-top:var(--space-3);">Upload a resume</a>
+        </div>`;
+      return;
+    }
+
+    const rowsHtml = candidates.map((c, idx) => {
+      const score     = c.matchScore?.weightedFinalScore;
+      const scoreNum  = score != null ? score : 0;
+      const scoreCls  = UI.scoreToClass(scoreNum);
+      const scoreClr  = UI.scoreToColor(scoreNum);
+      const name      = c.parsedData?.name || c.originalFileName || "Unknown";
+      const email     = c.parsedData?.email || "";
+      const rank      = c.rank || idx + 1;
+      const matched   = c.matchScore?.matchedSkills || [];
+
+      /* Show top 3 matched skills as mini pills */
+      const skillsHtml = matched.slice(0, 3).map(s =>
+        `<span class="mini-skill">${UI.escapeHtml(s)}</span>`
+      ).join("") + (matched.length > 3
+        ? `<span class="mini-skill">+${matched.length - 3}</span>`
+        : "");
+
+      return `
+        <tr onclick="window.location.href='/candidate/${UI.escapeHtml(c._id)}'">
+          <td>
+            <div class="rank-badge ${rank <= 3 ? "rank-" + rank : ""}">
+              ${rank}
+            </div>
+          </td>
+          <td>
+            <div class="candidate-cell">
+              <div class="candidate-mini-avatar">
+                ${(name).charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <div class="candidate-cell-name">${UI.escapeHtml(name)}</div>
+                ${email
+                  ? `<div class="candidate-cell-email">${UI.escapeHtml(email)}</div>`
+                  : ""}
+              </div>
+            </div>
+          </td>
+          <td>
+            <div class="inline-score">
+              <div class="inline-score-bar">
+                <div class="inline-score-fill ${scoreCls}"
+                     style="width:${scoreNum}%"></div>
+              </div>
+              <div class="inline-score-value" style="color:${scoreClr}">
+                ${score != null ? score.toFixed(0) + "%" : "—"}
+              </div>
+            </div>
+          </td>
+          <td>
+            <div class="mini-skills">${skillsHtml || "—"}</div>
+          </td>
+          <td>${UI.statusBadge(c.status || "matched")}</td>
+          <td style="color:var(--color-text-muted);">
+            ${UI.formatDate(c.createdAt || new Date())}
+          </td>
+        </tr>`;
+    }).join("");
+
+    document.getElementById("tableContainer").innerHTML = `
+      <table class="rankings-table">
+        <thead>
+          <tr>
+            <th style="width:48px;">Rank</th>
+            <th>Candidate</th>
+            <th style="min-width:180px;">Match Score</th>
+            <th>Top Skills</th>
+            <th>Status</th>
+            <th>Uploaded</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>`;
+  }
+
+  /* ══════════════════════════════════════════════════════
+     CLIENT-SIDE FILTERING
+     Both filters run together on the full allCandidates array.
+  ══════════════════════════════════════════════════════ */
+
+  function applyFilters() {
+    const query    = document.getElementById("searchInput").value.toLowerCase().trim();
+    const minScore = parseFloat(document.getElementById("minScoreFilter").value) || 0;
+
+    const filtered = allCandidates.filter(c => {
+      const name   = (c.parsedData?.name || c.originalFileName || "").toLowerCase();
+      const email  = (c.parsedData?.email || "").toLowerCase();
+      const skills = (c.parsedData?.skills || []).join(" ").toLowerCase();
+      const score  = c.matchScore?.weightedFinalScore || 0;
+
+      const matchesSearch = !query ||
+        name.includes(query) || email.includes(query) || skills.includes(query);
+      const matchesScore  = score >= minScore;
+
+      return matchesSearch && matchesScore;
+    });
+
+    renderRankings(filtered);
+  }
+
+  document.getElementById("searchInput").addEventListener("input",  applyFilters);
+  document.getElementById("minScoreFilter").addEventListener("change", applyFilters);
+
+  /* Kick off */
+  loadRankings();
+</script>
+</body>
+</html>

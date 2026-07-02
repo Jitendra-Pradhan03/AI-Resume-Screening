@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<!--
+  server/views/dashboard/jobs.ejs
+
+  Why this file exists: Lets recruiters manage job descriptions — create
+  new ones (paste text), view saved ones, and delete obsolete ones.
+  Each job card links to its rankings page.
+
+  How it connects:
+    - Rendered by GET /jobs in pageRoutes.js
+    - On load calls GET /api/job to list all JDs
+    - Create form calls POST /api/job
+    - Delete button calls DELETE /api/job/:id
+    - "View rankings" links to /rankings/:jobId (rankings.ejs)
+-->
+<html lang="en">
+<head>
+  <%- include('../partials/head') %>
+  <link rel="stylesheet" href="/css/layout.css" />
+  <link rel="stylesheet" href="/css/rankings.css" />
+</head>
+<body>
+<div class="app-shell">
+
+  <%- include('../partials/sidebar', { activePage: 'jobs' }) %>
+
+  <main class="main-content">
+
+    <!-- Page header -->
+    <div class="page-header">
+      <div>
+        <h1>Job Descriptions</h1>
+        <p class="text-secondary">Create and manage job descriptions for candidate matching</p>
+      </div>
+    </div>
+
+    <!-- Collapsible create form -->
+    <div class="create-jd-card" id="createCard">
+      <div class="create-jd-toggle" id="createToggle"
+           onclick="toggleCreateForm()">
+        <div style="display:flex; align-items:center; gap:var(--space-3);">
+          <span style="font-size:1.2rem;">+</span>
+          <div>
+            <div style="font-weight:var(--font-weight-semibold);
+                        font-size:var(--font-size-base);">
+              Create New Job Description
+            </div>
+            <div style="font-size:var(--font-size-xs); color:var(--color-text-muted);
+                        margin-top:2px;">
+              Click to expand
+            </div>
+          </div>
+        </div>
+        <span id="toggleArrow"
+              style="font-size:1rem; color:var(--color-text-muted);
+                     transition:transform var(--transition-normal);">▼</span>
+      </div>
+
+      <div class="create-jd-body hidden" id="createFormBody">
+        <div style="padding-top:var(--space-5);">
+          <div style="display:grid; grid-template-columns:1fr 1fr;
+                      gap:var(--space-4); margin-bottom:var(--space-4);">
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" for="newTitle">Job title *</label>
+              <input type="text" id="newTitle" class="form-input"
+                     placeholder="e.g. Backend Node.js Developer" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" for="newCompany">
+                Company <span class="text-muted">(optional)</span>
+              </label>
+              <input type="text" id="newCompany" class="form-input"
+                     placeholder="Acme Corp" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="newDescription">Job description *</label>
+            <textarea id="newDescription" class="form-textarea" rows="10"
+                      placeholder="Paste the full job description here (minimum 50 characters)...">
+            </textarea>
+            <p class="form-hint">
+              The AI will extract required skills, experience level, and education
+              requirements from this text to score candidates against.
+            </p>
+          </div>
+
+          <div style="display:flex; gap:var(--space-3);">
+            <button class="btn btn-primary" id="createJdBtn">
+              Save Job Description
+            </button>
+            <button class="btn btn-secondary" onclick="toggleCreateForm()">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Jobs grid -->
+    <div id="jobsContainer">
+      <div style="text-align:center; padding:var(--space-10);">
+        <span class="spinner spinner-dark spinner-lg"></span>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<%- include('../partials/footer', { includesSidebar: true }) %>
+
+<script>
+  AuthState.requireAuth();
+
+  /* ══════════════════════════════════════════════════════
+     COLLAPSIBLE CREATE FORM
+  ══════════════════════════════════════════════════════ */
+
+  let createFormOpen = false;
+
+  function toggleCreateForm() {
+    createFormOpen = !createFormOpen;
+    const body   = document.getElementById("createFormBody");
+    const arrow  = document.getElementById("toggleArrow");
+    const toggle = document.getElementById("createToggle");
+
+    body.classList.toggle("hidden", !createFormOpen);
+    arrow.style.transform    = createFormOpen ? "rotate(180deg)" : "rotate(0deg)";
+    toggle.querySelector("div > div:last-child").textContent =
+      createFormOpen ? "Click to collapse" : "Click to expand";
+  }
+
+  /* ══════════════════════════════════════════════════════
+     LOAD JOB DESCRIPTIONS
+  ══════════════════════════════════════════════════════ */
+
+  async function loadJobs() {
+    try {
+      const res = await ApiClient.get("/job");
+      renderJobs(res.data.jobDescriptions || []);
+    } catch (err) {
+      UI.showToast(err.message || "Failed to load job descriptions.", "error");
+      document.getElementById("jobsContainer").innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">⚠️</div>
+          <p>Could not load job descriptions.</p>
+        </div>`;
+    }
+  }
+
+  /* ── Job cards grid ── */
+  function renderJobs(jobs) {
+    const container = document.getElementById("jobsContainer");
+
+    if (!jobs.length) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">💼</div>
+          <p>No job descriptions yet.</p>
+          <button class="btn btn-primary btn-sm" style="margin-top:var(--space-3);"
+                  onclick="toggleCreateForm()">
+            Create your first one
+          </button>
+        </div>`;
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="jobs-grid">
+        ${jobs.map(jd => renderJobCard(jd)).join("")}
+      </div>`;
+  }
+
+  function renderJobCard(jd) {
+    /* Truncate description to a readable preview */
+    const preview = jd.description
+      ? jd.description.substring(0, 200).trim() + (jd.description.length > 200 ? "..." : "")
+      : "No description";
+
+    /* Show extracted skills if the AI has already processed this JD */
+    const skillsHtml = jd.extractedSkills && jd.extractedSkills.length
+      ? `<div style="display:flex; flex-wrap:wrap; gap:var(--space-1); margin-top:var(--space-3);">
+           ${jd.extractedSkills.slice(0, 5).map(s =>
+             `<span style="font-size:10px; padding:1px var(--space-2);
+                           border-radius:var(--radius-full);
+                           background:var(--color-primary-light);
+                           color:var(--color-primary);">
+               ${UI.escapeHtml(s)}
+             </span>`).join("")}
+           ${jd.extractedSkills.length > 5
+             ? `<span style="font-size:10px; color:var(--color-text-muted);">
+                  +${jd.extractedSkills.length - 5} more</span>`
+             : ""}
+         </div>`
+      : "";
+
+    return `
+      <div class="job-card">
+        <div class="job-card-header">
+          <div>
+            <div class="job-card-title">${UI.escapeHtml(jd.title)}</div>
+            ${jd.company
+              ? `<div class="job-card-company">${UI.escapeHtml(jd.company)}</div>`
+              : ""}
+          </div>
+          <span class="badge badge-neutral">${jd.source || "pasted"}</span>
+        </div>
+
+        <div class="job-card-preview">${UI.escapeHtml(preview)}</div>
+
+        ${skillsHtml}
+
+        <div class="job-card-footer">
+          <div class="job-card-date">
+            ${UI.formatDate(jd.createdAt)}
+          </div>
+          <div class="job-card-actions">
+            <a href="/rankings/${UI.escapeHtml(jd._id)}"
+               class="btn btn-secondary btn-sm">
+              View Rankings
+            </a>
+            <button class="btn btn-danger btn-sm"
+                    onclick="deleteJob('${UI.escapeHtml(jd._id)}',
+                             '${UI.escapeHtml(jd.title)}', event)">
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  /* ══════════════════════════════════════════════════════
+     CREATE JOB DESCRIPTION
+  ══════════════════════════════════════════════════════ */
+
+  document.getElementById("createJdBtn").addEventListener("click", async () => {
+    const btn   = document.getElementById("createJdBtn");
+    const title = document.getElementById("newTitle").value.trim();
+    const company = document.getElementById("newCompany").value.trim();
+    const description = document.getElementById("newDescription").value.trim();
+
+    if (!title) {
+      UI.showToast("Please enter a job title.", "error");
+      return;
+    }
+
+    if (description.length < 50) {
+      UI.showToast("Job description must be at least 50 characters.", "error");
+      return;
+    }
+
+    UI.setButtonLoading(btn, true, "Saving...");
+
+    try {
+      await ApiClient.post("/job", { title, company, description, source: "pasted" });
+
+      UI.showToast("Job description saved!", "success");
+
+      /* Reset the form */
+      document.getElementById("newTitle").value       = "";
+      document.getElementById("newCompany").value     = "";
+      document.getElementById("newDescription").value = "";
+
+      /* Close the form and reload the grid */
+      toggleCreateForm();
+      loadJobs();
+
+    } catch (err) {
+      UI.showToast(err.message || "Failed to save job description.", "error");
+    } finally {
+      UI.setButtonLoading(btn, false);
+    }
+  });
+
+  /* ══════════════════════════════════════════════════════
+     DELETE JOB DESCRIPTION
+  ══════════════════════════════════════════════════════ */
+
+  async function deleteJob(jobId, title, event) {
+    /* Stop the click propagating to any parent handlers */
+    event.stopPropagation();
+
+    if (!confirm(`Delete "${title}"? This will not delete matched candidates.`)) return;
+
+    try {
+      await ApiClient.delete(`/job/${jobId}`);
+      UI.showToast("Job description deleted.", "success");
+      loadJobs();
+    } catch (err) {
+      UI.showToast(err.message || "Failed to delete job description.", "error");
+    }
+  }
+
+  /* Kick off */
+  loadJobs();
+</script>
+</body>
+</html>
